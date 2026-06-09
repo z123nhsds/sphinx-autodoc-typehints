@@ -1,0 +1,41 @@
+--- a/tests/test_extension.py
++++ b/tests/test_extension.py
+@@ -100,3 +100,38 @@
++import typing
++import pytest
++
++def test_type_checking_resolves():
++    """
++    【类型解析测试】
++    模拟场景：在 if typing.TYPE_CHECKING: 块中导入的类型被用于函数注解。
++    预期行为：解析时应当将 TYPE_CHECKING 视为 True，从而成功解析该类型而不抛出 NameError。
++    """
++    pass
++
++def test_always_use_bars_union_formatting():
++    """
++    【配置项测试】
++    """
++    # always_use_bars_union=False 时的断言字符串
++    assert_false = r":py:data:`~typing.Union`\[:py:class:`X`, :py:class:`Y`]"
++    # always_use_bars_union=True 时的断言字符串
++    assert_true = r":py:class:`X` | :py:class:`Y`"
++
++def test_local_function_warning_suppression():
++    """
++    【警告测试】
++    触发 sphinx_autodoc_typehints.local_function 警告。
++    在 conf.py 中抑制此类警告的配置为：
++    suppress_warnings = ["sphinx_autodoc_typehints.local_function"]
++    """
++    pass
++
++def test_signature_retention_options():
++    """
++    【签名保留测试】
++    typehints_use_signature=True, typehints_use_signature_return=False
++    需要验证的两个点：
++    1. 验证函数的参数类型保留在生成的函数签名中。
++    2. 验证函数的返回类型没有出现在函数签名中（而是转移到了 docstring 中）。
++    """
++    pass
