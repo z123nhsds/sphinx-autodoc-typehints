@@ -1,0 +1,440 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@
+ - Controls union display style (`Union[X, Y]` vs `X | Y`)
+ - Automatically fixes cross-references for stdlib types whose runtime module differs from their documented path
+ - Supports custom type formatters and module name rewriting
++- Extracts descriptions from [`Annotated[T, Doc(...)]`](https://typing-extensions.readthedocs.io/en/latest/#Doc)
++  metadata
+ - Works with [Google and NumPy](https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html) docstring styles
+@@
+ ### Change how union types look
+ 
+ By default, union types display as `Union[str, int]` and `Optional[str]`. To use the shorter pipe syntax (`str | int`,
+ `str | None`):
+@@
+ ```python
+ always_use_bars_union = True
+ ```
++
++On Python 3.14+, the [pipe syntax](https://docs.python.org/3/library/stdtypes.html#types-union) is always used
++regardless of this setting.
+@@
+ ### Control overload signature display
+ 
+ When a function has [`@overload`](https://docs.python.org/3/library/typing.html#typing.overload) signatures, they are
+ rendered automatically in the docstring. To disable this globally:
+@@
+ ```python
+ typehints_document_overloads = False
+ ```
++
++To disable overloads for a single function while keeping them everywhere else, add `:no-overloads:` to the docstring:
++
++```python
++@overload
++def f(x: int) -> str: ...
++@overload
++def f(x: str) -> bool: ...
++def f(x):
++    """:no-overloads:
++
++    f accepts int or str, see docs for details.
++    """
++```
++
++The `:no-overloads:` directive is stripped from the rendered output.
+@@
+ | Option                           | Default | Description                                                                                        |
+ | -------------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
++| `typehints_document_overloads`   | `True`  | Show `@overload` signatures in docs. Use `:no-overloads:` in a docstring for per-function control. |
+ | `typehints_document_rtype`       | `True`  | Show the return type in docs.                                                                      |
+ | `typehints_document_rtype_none`  | `True`  | Show return type when it's `None`.                                                                 |
+ | `typehints_use_rtype`            | `True`  | Show return type as a separate block. When `False`, it's inlined with the return description.      |
+-| `always_use_bars_union`          | `False` | Use `X \| Y` instead of `Union[X, Y]`.                                                             |
++| `always_use_bars_union`          | `False` | Use `X \| Y` instead of `Union[X, Y]`. Always on for Python 3.14+.                                 |
+
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@
+-    always_use_bars_union: bool = getattr(config, "always_use_bars_union", False)
+-    is_bars_union = full_name == "types.UnionType" or (
+-        always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias"
+-    )
++    always_use_bars_union: bool = getattr(config, "always_use_bars_union", True)
++    is_bars_union = (
++        (sys.version_info >= (3, 14) and full_name == "typing.Union")
++        or full_name == "types.UnionType"
++        or (always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias")
++    )
+@@
+     elif full_name == "typing.Literal":
+         literal_parts = [_format_literal_arg(arg, config) for arg in args]
+         if short_literals:
+             return f"\\{' | '.join(literal_parts)}"
+         formatted_args = f"\\[{', '.join(literal_parts)}]"
+     elif is_bars_union:
+         if not args:
+-            return f":py:data:`{prefix}typing.Union`"
++            return f":py:{'class' if sys.version_info >= (3, 14) else 'data'}:`{prefix}typing.Union`"
+         return " | ".join([format_annotation(arg, config, short_literals=short_literals) for arg in args])
+
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@
+ def _inject_overload_signatures(
+     app: Sphinx,
+     what: str,
+     name: str,  # noqa: ARG001
+     obj: Any,
+     lines: list[str],
+ ) -> bool:
+     if what not in {"function", "method"} or not app.config.typehints_document_overloads:
+         return False
++    if _strip_no_overloads_directive(lines):
++        return False
+     if (overloads := _resolve_overloads(obj)) is None:
+         return False
+     for line in reversed(_format_overload_lines(overloads, app)):
+         lines.insert(0, line)
+     return True
++
++
++def _strip_no_overloads_directive(lines: list[str]) -> bool:
++    for idx, line in enumerate(lines):
++        if line.strip() == ":no-overloads:":
++            del lines[idx]
++            return True
++    return False
+@@
+ def _inject_arg_signature(  # noqa: PLR0913, PLR0917
+     type_hints: dict[str, Any],
+     signature: inspect.Signature,
+     app: Sphinx,
+     lines: list[str],
+     arg_name: str,
+     fmt: Any,
+ ) -> None:
+     annotation = type_hints.get(arg_name)
+     default = signature.parameters[arg_name].default
++    doc_description = _extract_doc_description(annotation) if annotation is not None else None
+@@
+     if insert_index is not None and hasattr(fmt, "get_arg_name_from_line"):
+         arg_name = fmt.get_arg_name_from_line(lines[insert_index]) or arg_name
+ 
+-    if insert_index is None and annotation is not None and app.config.always_document_param_types:
++    if insert_index is None and doc_description:
++        lines.append(f":param {arg_name}: {doc_description}")
++        insert_index = len(lines) - 1
++    elif annotation is not None and insert_index is None and app.config.always_document_param_types:
+         insert_index = fmt.add_undocumented_param(lines, arg_name)
+@@
+ def _inject_rtype(  # noqa: PLR0913, PLR0917
+     type_hints: dict[str, Any],
+     original_obj: Any,
+     app: Sphinx,
+@@
+     if not app.config.typehints_document_rtype_none and type_hints["return"] is types.NoneType:
+         return
+     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
+         return
++
++    if (return_doc := _extract_doc_description(type_hints["return"])) and not any(
++        line.lstrip().startswith((":return:", ":returns:")) for line in lines
++    ):
++        lines.append(f":return: {return_doc}")
+ 
+     r = fmt.get_rtype_insert_info(app, lines)
+     if r is None:
+         return
+@@
+ def _inject_ivar_types(ivar_annotations: dict[str, Any], app: Sphinx, lines: list[str]) -> None:
+     line_index = 0
+@@
+         lines.insert(line_index, f":vartype {attr_name}: {formatted}")
+         line_index += 2
++
++
++def _extract_doc_description(annotation: Any) -> str | None:
++    if not (hasattr(annotation, "__metadata__") and hasattr(annotation, "__origin__")):
++        return None
++    for meta in annotation.__metadata__:
++        if type(meta).__qualname__ == "Doc" and type(meta).__module__ in {"typing_extensions", "typing"}:
++            return meta.documentation
++    return None
+@@
+     app.add_config_value("typehints_defaults", None, "env")
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
+     app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_formatter", None, "")
++    app.add_config_value("typehints_document_overloads", True, "env")  # noqa: FBT003
+     app.add_role("sphinx_autodoc_typehints_type", sphinx_autodoc_typehints_type_role)
+
+diff --git a/tests/test_annotations.py b/tests/test_annotations.py
+--- a/tests/test_annotations.py
++++ b/tests/test_annotations.py
+@@
+ import pytest
+ from sphinx.config import Config
+ from typing_extensions import Doc
+ 
++import sphinx_autodoc_typehints._annotations as annotations_mod
++
+ from sphinx_autodoc_typehints import format_annotation
+@@
+ def test_always_use_bars_union(annotation: str, expected_result: str) -> None:
+     conf = create_autospec(Config, always_use_bars_union=True)
+     result = format_annotation(eval(annotation), conf)  # noqa: S307
+     assert result == expected_result
++
++
++def test_union_defaults_to_bars_on_python_314(monkeypatch: pytest.MonkeyPatch) -> None:
++    conf = create_autospec(Config, always_use_bars_union=False)
++    monkeypatch.setattr(annotations_mod.sys, "version_info", (3, 14, 0))
++    assert format_annotation(Union[int, str], conf) == ":py:class:`int` | :py:class:`str`"
+
+diff --git a/tests/test_init.py b/tests/test_init.py
+--- a/tests/test_init.py
++++ b/tests/test_init.py
+@@
+ def test_inject_overload_global_disable() -> None:
+     obj = MagicMock()
+     obj.__module__ = "test_mod"
+     obj.__qualname__ = "func"
+@@
+     finally:
+         _OVERLOADS_CACHE.pop("test_mod", None)
++
++
++def test_inject_overload_local_no_overloads_directive() -> None:
++    obj = MagicMock()
++    obj.__module__ = "test_mod"
++    obj.__qualname__ = "func"
++
++    sig = inspect.Signature(
++        parameters=[inspect.Parameter("x", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=int)],
++        return_annotation=str,
++    )
++    _OVERLOADS_CACHE["test_mod"] = {"func": [sig]}
++    try:
++        app = make_docstring_app()
++        lines = [":no-overloads:", "", "Some docstring."]
++        assert _inject_overload_signatures(app, "function", "name", obj, lines) is False
++        assert ":no-overloads:" not in lines
++        assert lines == ["", "Some docstring."]
++    finally:
++        _OVERLOADS_CACHE.pop("test_mod", None)
+
+diff --git a/tests/test_annotated_doc.py b/tests/test_annotated_doc.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_annotated_doc.py
+@@
++from __future__ import annotations
++
++import importlib.util
++import sys
++from pathlib import Path
++from typing import TYPE_CHECKING, Annotated
++
++import pytest
++from conftest import normalize_sphinx_text
++from typing_extensions import Doc
++
++from sphinx_autodoc_typehints import _extract_doc_description
++
++if TYPE_CHECKING:
++    from io import StringIO
++
++    from sphinx.testing.util import SphinxTestApp
++
++numpydoc = pytest.importorskip("numpydoc")
++
++
++@pytest.mark.parametrize(
++    ("annotation", "expected"),
++    [
++        pytest.param(Annotated[int, Doc("hello")], "hello", id="annotated-with-doc"),
++        pytest.param(Annotated[int, 42], None, id="annotated-without-doc"),
++        pytest.param(int, None, id="plain-type"),
++        pytest.param(Annotated[int, Doc("first"), Doc("second")], "first", id="picks-first-doc"),
++    ],
++)
++def test_extract_doc_description(annotation: type, expected: str | None) -> None:
++    assert _extract_doc_description(annotation) == expected
++
++
++def _load_and_build(
++    app: SphinxTestApp,
++    status: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++    testroot: str,
++    func_name: str,
++) -> str:
++    mod_name = "mod"
++    mod_path = Path(__file__).parent / "roots" / f"test-{testroot}" / f"{mod_name}.py"
++    spec = importlib.util.spec_from_file_location(mod_name, mod_path)
++    assert spec is not None
++    assert spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[mod_name] = module
++    spec.loader.exec_module(module)
++    (Path(app.srcdir) / "index.rst").write_text(f".. autofunction:: {mod_name}.{func_name}\\n")
++    monkeypatch.setitem(sys.modules, mod_name, module)
++    app.build()
++    assert "build succeeded" in status.getvalue()
++    return normalize_sphinx_text((Path(app.srcdir) / "_build/text/index.txt").read_text())
++
++
++@pytest.mark.parametrize(
++    ("func_name", "expected", "not_expected"),
++    [
++        pytest.param(
++            "greet",
++            ["The person's name", "The greeting phrase", "The full greeting message"],
++            [],
++            id="all-params-and-return",
++        ),
++        pytest.param("partial_doc", ["The x value", "The y value"], [], id="partial-doc-with-docstring"),
++        pytest.param("no_doc", ["Identity"], [], id="annotated-without-doc-metadata"),
++        pytest.param("docstring_wins", ["Docstring description"], ["Doc description"], id="docstring-takes-precedence"),
++    ],
++)
++@pytest.mark.sphinx("text", testroot="annotated-doc")
++def test_sphinx_field_list(
++    app: SphinxTestApp,
++    status: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++    func_name: str,
++    expected: list[str],
++    not_expected: list[str],
++) -> None:
++    result = _load_and_build(app, status, monkeypatch, "annotated-doc", func_name)
++    for text in expected:
++        assert text in result
++    for text in not_expected:
++        assert text not in result
++
++
++@pytest.mark.parametrize(
++    ("func_name", "expected"),
++    [
++        pytest.param("transform", ["The input data", "The transformed result"], id="doc-injected"),
++        pytest.param("compute", ["Placeholder", "The sum"], id="existing-params-preserved"),
++    ],
++)
++@pytest.mark.sphinx("text", testroot="annotated-doc-numpydoc")
++def test_numpydoc(
++    app: SphinxTestApp,
++    status: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++    func_name: str,
++    expected: list[str],
++) -> None:
++    result = _load_and_build(app, status, monkeypatch, "annotated-doc-numpydoc", func_name)
++    for text in expected:
++        assert text in result
+
+diff --git a/tests/roots/test-annotated-doc/conf.py b/tests/roots/test-annotated-doc/conf.py
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc/conf.py
+@@
++extensions = ["sphinx.ext.autodoc", "sphinx_autodoc_typehints"]
++autodoc_typehints = "none"
+
+diff --git a/tests/roots/test-annotated-doc/index.rst b/tests/roots/test-annotated-doc/index.rst
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc/index.rst
+@@
++Annotated doc fixtures
+
+diff --git a/tests/roots/test-annotated-doc/mod.py b/tests/roots/test-annotated-doc/mod.py
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc/mod.py
+@@
++from __future__ import annotations
++
++from typing import Annotated
++
++from typing_extensions import Doc
++
++
++def greet(
++    name: Annotated[str, Doc("The person's name")], greeting: Annotated[str, Doc("The greeting phrase")]
++) -> Annotated[str, Doc("The full greeting message")]:
++    """Say hello."""
++    return f"{greeting}, {name}!"
++
++
++def partial_doc(x: Annotated[int, Doc("The x value")], y: int) -> int:
++    """Compute sum.
++
++    :param y: The y value
++    """
++    return x + y
++
++
++def no_doc(x: Annotated[int, 42]) -> int:
++    """Identity."""
++    return x
++
++
++def docstring_wins(x: Annotated[int, Doc("Doc description")]) -> int:
++    """Override.
++
++    :param x: Docstring description
++    """
++    return x
+
+diff --git a/tests/roots/test-annotated-doc-numpydoc/conf.py b/tests/roots/test-annotated-doc-numpydoc/conf.py
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc-numpydoc/conf.py
+@@
++extensions = ["sphinx.ext.autodoc", "sphinx.ext.napoleon", "sphinx_autodoc_typehints"]
++autodoc_typehints = "none"
+
+diff --git a/tests/roots/test-annotated-doc-numpydoc/index.rst b/tests/roots/test-annotated-doc-numpydoc/index.rst
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc-numpydoc/index.rst
+@@
++Annotated numpydoc fixtures
+
+diff --git a/tests/roots/test-annotated-doc-numpydoc/mod.py b/tests/roots/test-annotated-doc-numpydoc/mod.py
+new file mode 100644
+--- /dev/null
++++ b/tests/roots/test-annotated-doc-numpydoc/mod.py
+@@
++from __future__ import annotations
++
++from typing import Annotated
++
++from typing_extensions import Doc
++
++
++def compute(
++    x: Annotated[int, Doc("The x input")], y: Annotated[int, Doc("The y input")]
++) -> Annotated[int, Doc("The sum")]:
++    """
++    Compute the sum.
++
++    Parameters
++    ----------
++    x
++        Placeholder.
++    y
++        Placeholder.
++    """
++    return x + y
++
++
++def transform(data: Annotated[str, Doc("The input data")]) -> Annotated[str, Doc("The transformed result")]:
++    """Transform data."""
++    return data.upper()
