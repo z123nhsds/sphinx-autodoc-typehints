@@ -404,8 +404,6 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
         return
     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
         return
-
-    if (return_doc := _extract_doc_description(type_hints["return"])) and not any(
         line.lstrip().startswith((":return:", ":returns:")) for line in lines
     ):
         lines.append(f":return: {return_doc}")
@@ -509,7 +507,6 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
     app.add_config_value("typehints_document_rtype_none", True, "env")  # noqa: FBT003
     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
-    app.add_config_value("typehints_defaults", None, "env")
     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
     app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
     app.add_config_value("typehints_formatter", None, "")

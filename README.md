@@ -152,10 +152,6 @@ typehints_document_rtype = False
 # Don't show "None" return types, but show all others
 typehints_document_rtype_none = False
 
-# Show the return type inline with the return description
-# instead of as a separate block
-typehints_use_rtype = False
-```
 
 ### Change how union types look
 
@@ -360,7 +356,6 @@ To suppress only specific warning types, see [Warning categories](#warning-categ
 | `typehints_use_rtype`            | `True`  | Show return type as a separate block. When `False`, it's inlined with the return description.      |
 | `always_use_bars_union`          | `False` | Use `X \| Y` instead of `Union[X, Y]`. Always on for Python 3.14+.                                 |
 | `simplify_optional_unions`       | `True`  | Flatten `Optional[Union[A, B]]` to `Union[A, B, None]`.                                            |
-| `typehints_defaults`             | `None`  | Show default values: `"comma"`, `"braces"`, or `"braces-after"`.                                   |
 | `typehints_use_signature`        | `False` | Keep parameter types in the function signature.                                                    |
 | `typehints_use_signature_return` | `False` | Keep the return type in the function signature.                                                    |
 | `typehints_fully_qualified`      | `False` | Show full module path for types (e.g., `module.Class` not `Class`).                                |

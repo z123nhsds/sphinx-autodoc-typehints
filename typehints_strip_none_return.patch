@@ -1,0 +1,117 @@
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+index 1111111..2222222 100644
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@ -85,7 +85,11 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool
+     if isinstance(annotation, ForwardRef):
+         return annotation.__forward_arg__
+     if annotation is None or annotation is type(None):
+-    if annotation is Ellipsis:
++        if getattr(config, "typehints_strip_none_return", False):
++            return ""
++        return ":py:obj:`None`"
++    if annotation is Ellipsis:
+         return ":py:data:`...<Ellipsis>`"
+
+     if isinstance(annotation, tuple):
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+index 3333333..4444444 100644
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@ -400,8 +400,16 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
+     if not app.config.typehints_document_rtype:
+         return
+-    if not app.config.typehints_document_rtype_none and type_hints["return"] is types.NoneType:
++    if app.config.typehints_strip_none_return and type_hints["return"] is types.NoneType:
+         return
++    if not app.config.typehints_document_rtype_none and type_hints["return"] is types.NoneType:
++        r = fmt.get_rtype_insert_info(app, lines)
++        if r is not None:
++            fmt.inject_rtype(lines, "", r, use_rtype=app.config.typehints_use_rtype)
++        return
+     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
+         return
+         line.lstrip().startswith((":return:", ":returns:")) for line in lines
+@@ -505,6 +513,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("typehints_fully_qualified", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype_none", True, "env")  # noqa: FBT003
++    app.add_config_value("typehints_strip_none_return", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
+     app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
+diff --git a/docs/configuration.rst b/docs/configuration.rst
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/docs/configuration.rst
+@@ -0,0 +1,42 @@
++Configuration
++=============
++
++All configuration options are set in your Sphinx ``conf.py``.
++
++``typehints_strip_none_return``
++-------------------------------
++
++**Default:** ``False``
++
++When set to ``True``, if a function's return type annotation is ``None`` or
++``NoneType``, the ``:rtype:`` block is **completely omitted** from the
++generated documentation — no ``:rtype:`` field is emitted at all.
++
++This is different from ``typehints_document_rtype_none`` (see below):
++
++- ``typehints_strip_none_return = True`` — the entire ``:rtype:`` block is
++  removed; the field does not appear in the output.
++- ``typehints_document_rtype_none = False`` — the ``:rtype:`` block is still
++  generated, but the type content is hidden (rendered as an empty field).
++
++Example:
++
++.. code-block:: python
++
++   # conf.py
++   typehints_strip_none_return = True
++
++With this setting, a function annotated as ``def foo() -> None:`` will not
++have any ``:rtype:`` entry in its documentation.
++
++Interaction with other return-type options
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++- ``typehints_strip_none_return`` takes priority over
++  ``typehints_document_rtype_none``.  When both are set and the return type is
++  ``None``, the ``:rtype:`` block is completely omitted.
++- ``typehints_document_rtype = False`` disables *all* return-type
++  documentation regardless of this option.
++- ``typehints_use_rtype`` controls whether the return type appears as a
++  separate ``:rtype:`` block or is inlined with ``:return:``.  It has no
++  effect when ``typehints_strip_none_return = True`` because no return-type
++  information is emitted at all for ``None`` returns.
+diff --git a/README.md b/README.md
+index 6666666..7777777 100644
+--- a/README.md
++++ b/README.md
+@@ -128,6 +128,9 @@ By default, return types appear as a separate block in your docs. You can change
+ # Don't show "None" return types, but show all others
+ typehints_document_rtype_none = False
+
++# Completely remove the :rtype: block for None return types
++typehints_strip_none_return = True
++
+
+ ### Change how union types look
+
+@@ -238,6 +241,7 @@ See
+ | `typehints_document_rtype`       | `True`  | Show the return type in docs.                                                                      |
+ | `typehints_document_rtype_none`  | `True`  | Show return type when it's `None`.                                                                 |
++| `typehints_strip_none_return`    | `False` | Completely omit the `:rtype:` block when the return type is `None` (no field emitted at all).      |
+ | `typehints_document_overloads`   | `True`  | Show `@overload` signatures in docs. Use `:no-overloads:` in a docstring for per-function control. |
+ | `typehints_use_rtype`            | `True`  | Show return type as a separate block. When `False`, it's inlined with the return description.      |
+ | `always_use_bars_union`          | `False` | Use `X \| Y` instead of `Union[X, Y]`. Always on for Python 3.14+.                                 |
+@@ -284,6 +288,8 @@ The return type options combine as follows:
+ - **Skip None** (`typehints_document_rtype_none = False`) -- hides `None` return types specifically, other return types
+   still appear.
++- **Strip None** (`typehints_strip_none_return = True`) -- completely removes the `:rtype:` block for `None` return
++  types. Takes priority over `typehints_document_rtype_none`.

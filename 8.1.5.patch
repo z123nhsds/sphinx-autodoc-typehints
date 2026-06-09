@@ -1,0 +1,56 @@
+diff --git a/README.md b/README.md
+index b6b8208..76ab874 100644
+--- a/README.md
++++ b/README.md
+@@ -152,10 +152,6 @@ typehints_document_rtype = False
+ # Don't show "None" return types, but show all others
+ typehints_document_rtype_none = False
+ 
+-# Show the return type inline with the return description
+-# instead of as a separate block
+-typehints_use_rtype = False
+-```
+ 
+ ### Change how union types look
+ 
+@@ -360,7 +356,6 @@ To suppress only specific warning types, see [Warning categories](#warning-categ
+ | `typehints_use_rtype`            | `True`  | Show return type as a separate block. When `False`, it's inlined with the return description.      |
+ | `always_use_bars_union`          | `False` | Use `X \| Y` instead of `Union[X, Y]`. Always on for Python 3.14+.                                 |
+ | `simplify_optional_unions`       | `True`  | Flatten `Optional[Union[A, B]]` to `Union[A, B, None]`.                                            |
+-| `typehints_defaults`             | `None`  | Show default values: `"comma"`, `"braces"`, or `"braces-after"`.                                   |
+ | `typehints_use_signature`        | `False` | Keep parameter types in the function signature.                                                    |
+ | `typehints_use_signature_return` | `False` | Keep the return type in the function signature.                                                    |
+ | `typehints_fully_qualified`      | `False` | Show full module path for types (e.g., `module.Class` not `Class`).                                |
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+index dc8c046..621d0d8 100644
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@ -404,8 +404,6 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
+         return
+     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
+         return
+-
+-    if (return_doc := _extract_doc_description(type_hints["return"])) and not any(
+         line.lstrip().startswith((":return:", ":returns:")) for line in lines
+     ):
+         lines.append(f":return: {return_doc}")
+@@ -509,7 +507,6 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype_none", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
+-    app.add_config_value("typehints_defaults", None, "env")
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
+     app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_formatter", None, "")
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+index f5a35ba..ebe3f7c 100644
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@ -85,7 +85,6 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
+     if isinstance(annotation, ForwardRef):
+         return annotation.__forward_arg__
+     if annotation is None or annotation is type(None):
+-        return ":py:obj:`None`"
+     if annotation is Ellipsis:
+         return ":py:data:`...<Ellipsis>`"
+ 
