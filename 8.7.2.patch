@@ -1,0 +1,20 @@
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx_autodoc_typehints",
+]
+
+autodoc_typehints = "none"
+
+suppress_warnings = [
+    "sphinx_autodoc_typehints.guarded_import",
+    "sphinx_autodoc_typehints.local_function",
+]
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
+
+typehints_use_signature = True
+typehints_use_signature_return = False
