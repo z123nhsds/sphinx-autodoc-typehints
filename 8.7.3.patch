@@ -1,0 +1,18 @@
+# 1. 禁用 Sphinx 原生类型提示处理，并设置扩展加载顺序（napoleon 先于 typehints）
+autodoc_typehints = "none"
+
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
+]
+
+# 2. 抑制特定警告
+suppress_warnings = [
+    "sphinx_autodoc_typehints.guarded_import",
+    "sphinx_autodoc_typehints.local_function",
+]
+
+# 4. 签名控制：函数签名保留参数类型，但不保留返回类型
+typehints_use_signature = True
+typehints_use_signature_return = False
