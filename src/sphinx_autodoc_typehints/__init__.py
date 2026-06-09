@@ -400,8 +400,6 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
         return
     if not app.config.typehints_document_rtype:
         return
-    if not app.config.typehints_document_rtype_none and type_hints["return"] is types.NoneType:
-        return
     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
         return
 
@@ -415,9 +413,12 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
         return
 
     short_literals = app.config.python_display_short_literal_types
-    formatted_annotation = add_type_css_class(
-        format_annotation(type_hints["return"], app.config, short_literals=short_literals)
-    )
+    formatted_annotation = format_annotation(type_hints["return"], app.config, short_literals=short_literals)
+    
+    if getattr(app.config, "typehints_strip_none_return", False) and not formatted_annotation:
+        return
+        
+    formatted_annotation = add_type_css_class(formatted_annotation)
 
     fmt.inject_rtype(lines, formatted_annotation, r, use_rtype=app.config.typehints_use_rtype)
 
@@ -508,6 +509,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
     app.add_config_value("typehints_fully_qualified", False, "env")  # noqa: FBT003
     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
     app.add_config_value("typehints_document_rtype_none", True, "env")  # noqa: FBT003
+    app.add_config_value("typehints_strip_none_return", False, "env")
     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
     app.add_config_value("typehints_defaults", None, "env")
     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
