@@ -1,0 +1,87 @@
+--- a/conf.py
++++ b/conf.py
+@@ -1,2 +1,40 @@
+-extensions = ["sphinx.ext.autodoc"]
+-autodoc_typehints = "description"
++# 原配置:
++#   extensions = ["sphinx.ext.autodoc"]
++#   autodoc_typehints = "description"
++#
+# 重构后配置: 使用 sphinx-autodoc-typehints 扩展替代 Sphinx 内置的 autodoc_typehints
++# 并启用以下功能:
++#   - Google 风格 docstring (sphinx.ext.napoleon)
++#   - X | Y 联合类型语法
++#   - 隐藏 None 返回类型
++#   - 默认值以 braces-after 方式显示
++#   - 保留函数签名中的参数类型和返回类型
++#   - 修复 gi.repository.Gtk.Window 的 intersphinx 链接
++
++extensions = [
++    "sphinx.ext.autodoc",
++    "sphinx.ext.intersphinx",
++    "sphinx.ext.napoleon",
++    "sphinx_autodoc_typehints",
++]
++
++# 禁用 Sphinx 内置的 autodoc_typehints，避免类型信息重复显示
++# 由 sphinx-autodoc-typehints 接管全部类型提示处理
++autodoc_typehints = "none"
++
++# --- sphinx.ext.napoleon 配置 ---
++# 禁用 napoleon 的独立 :rtype: 块，避免与 sphinx-autodoc-typehints 的返回类型显示重复
++napoleon_use_rtype = False
++
++# --- sphinx-autodoc-typehints 配置 ---
++# 使用 X | Y 语法替代 Union[X, Y] 显示联合类型
++always_use_bars_union = True
++
++# 不显示返回类型为 None 的 :rtype: 条目
++typehints_document_rtype_none = False
++
++# 默认值以 braces-after 方式显示: "param (int) -- description (default: 1)"
++typehints_defaults = "braces-after"
++
++# 保留函数签名中的参数类型
++typehints_use_signature = True
++
++# 保留函数签名中的返回类型
++typehints_use_signature_return = True
++
++# 修复 gi.repository.Gtk.Window 的 intersphinx 交叉引用链接
++# GTK 类型在 Python 中位于 gi.repository.Gtk.Window，但文档中记录为 Gtk.Window
++# 此函数将 gi.repository. 前缀移除，使 intersphinx 能正确解析链接
++def fixup_module_name(module: str) -> str:
++    if module.startswith("gi.repository."):
++        return module.removeprefix("gi.repository.")
++    return module
++
++typehints_fixup_module_name = fixup_module_name
++
++# --- intersphinx 配置 ---
++# 启用 intersphinx 以支持跨项目交叉引用解析
++# sphinx-autodoc-typehints 会自动利用 intersphinx 库存数据修复标准库类型的模块路径
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
++
++# ============================================================
++# @overload 渲染区别说明
++# ============================================================
++# Sphinx 内置的 autodoc_typehints = "description" 对 @overload 的处理:
++#   - 仅显示最终实现函数的单一签名，忽略所有 @overload 装饰的变体
++#   - 不会在文档中列出各个重载签名的参数类型和返回类型
++#
++# sphinx-autodoc-typehints 对 @overload 的处理:
++#   - 自动检测 @overload 装饰器，缓存所有重载签名
++#   - 在文档字符串顶部注入 ":Overloads:" 块，列出每个重载变体
++#   - 每个重载以 "  * **param1** (type1), **param2** (type2) -> return_type" 格式显示
++#   - 类型信息经过 format_annotation 格式化，支持交叉引用链接
++#   - 可通过 typehints_document_overloads = False 全局禁用
++#   - 可在单个函数的 docstring 中使用 :no-overloads: 指令局部禁用
++#   - 当存在 overloads 时，跳过常规的 :rtype: 注入，避免重复
++#
++# 关键实现细节 (patches.py):
++#   - 对 Sphinx 9+ 的指令式架构，修补 ModuleAnalyzer.analyze 方法
++#   - 在分析阶段缓存 overloads 到 _OVERLOADS_CACHE，然后清空 self.overloads
++#   - 这样 Sphinx 不会在签名中渲染 overloads，而是由本扩展在文档字符串中渲染
++#   - 渲染时使用 format_annotation 进行类型格式化，确保类型可交叉引用
