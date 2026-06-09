@@ -1,0 +1,27 @@
+--- a/conf.py
++++ b/conf.py
+@@
+-extensions = ["sphinx.ext.autodoc"]
+-autodoc_typehints = "description"
++def fixup_module_name(module: str) -> str:
++    if module.startswith("gi.repository."):
++        return module.removeprefix("gi.repository.")
++    return module
++
++
++extensions = [
++    "sphinx.ext.autodoc",
++    "sphinx.ext.napoleon",
++    "sphinx_autodoc_typehints",
++]
++
++autodoc_typehints = "none"
++napoleon_use_rtype = False
++typehints_use_rtype = False
++typehints_document_rtype_none = False
++always_use_bars_union = True
++typehints_defaults = "braces-after"
++typehints_use_signature = True
++typehints_use_signature_return = True
++typehints_document_overloads = True
++typehints_fixup_module_name = fixup_module_name
