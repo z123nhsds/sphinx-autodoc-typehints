@@ -1,37 +1,88 @@
 diff --git a/8.1.1.patch b/8.1.1.patch
-new file mode 100644
-index 0000000..e69de29
+index 53271ff..e69de29 100644
+--- a/8.1.1.patch
++++ b/8.1.1.patch
+@@ -1,37 +0,0 @@
+-diff --git a/8.1.1.patch b/8.1.1.patch
+-new file mode 100644
+-index 0000000..e69de29
+-diff --git a/conf.py b/conf.py
+-new file mode 100644
+-index 0000000..6ffa0ab
+---- /dev/null
+-+++ b/conf.py
+-@@ -0,0 +1,28 @@
+-+import os
+-+import sys
+-+
+-+sys.path.insert(0, os.path.abspath("."))
+-+
+-+project = "My Project"
+-+author = "Author"
+-+release = "0.1.0"
+-+
+-+extensions = [
+-+    "sphinx.ext.autodoc",
+-+    "sphinx.ext.napoleon",
+-+    "sphinx_autodoc_typehints",
+-+]
+-+
+-+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+-+
+-+html_theme = "alabaster"
+-+
+-+autodoc_typehints = "none"
+-+napoleon_use_rtype = False
+-+typehints_use_rtype = False
+-+always_use_bars_union = True
+-+simplify_optional_unions = False
+-+typehints_use_signature = True
+-+typehints_use_signature_return = True
+-+typehints_defaults = "braces-after"
+-+typehints_document_rtype_none = False
 diff --git a/conf.py b/conf.py
-new file mode 100644
-index 0000000..6ffa0ab
---- /dev/null
+index 6ffa0ab..42e1ed1 100644
+--- a/conf.py
 +++ b/conf.py
-@@ -0,0 +1,28 @@
-+import os
-+import sys
+@@ -26,3 +26,4 @@ typehints_use_signature = True
+ typehints_use_signature_return = True
+ typehints_defaults = "braces-after"
+ typehints_document_rtype_none = False
++typehints_strip_none_return = False
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+index dc8c046..6b74456 100644
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@ -405,6 +405,11 @@ def _inject_rtype(  # noqa: PLR0913, PLR0917
+     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
+         return
+ 
++    is_none_return = type_hints["return"] is types.NoneType or type_hints["return"] is None
 +
-+sys.path.insert(0, os.path.abspath("."))
++    if getattr(app.config, "typehints_strip_none_return", False) and is_none_return:
++        return
 +
-+project = "My Project"
-+author = "Author"
-+release = "0.1.0"
-+
-+extensions = [
-+    "sphinx.ext.autodoc",
-+    "sphinx.ext.napoleon",
-+    "sphinx_autodoc_typehints",
-+]
-+
-+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
-+
-+html_theme = "alabaster"
-+
-+autodoc_typehints = "none"
-+napoleon_use_rtype = False
-+typehints_use_rtype = False
-+always_use_bars_union = True
-+simplify_optional_unions = False
-+typehints_use_signature = True
-+typehints_use_signature_return = True
-+typehints_defaults = "braces-after"
-+typehints_document_rtype_none = False
+     if (return_doc := _extract_doc_description(type_hints["return"])) and not any(
+         line.lstrip().startswith((":return:", ":returns:")) for line in lines
+     ):
+@@ -508,6 +513,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("typehints_fully_qualified", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype_none", True, "env")  # noqa: FBT003
++    app.add_config_value("typehints_strip_none_return", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_defaults", None, "env")
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+index f5a35ba..1fff135 100644
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@ -85,6 +85,8 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
+     if isinstance(annotation, ForwardRef):
+         return annotation.__forward_arg__
+     if annotation is None or annotation is type(None):
++        if getattr(config, "typehints_strip_none_return", False):
++            return ""
+         return ":py:obj:`None`"
+     if annotation is Ellipsis:
+         return ":py:data:`...<Ellipsis>`"

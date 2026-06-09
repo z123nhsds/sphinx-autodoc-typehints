@@ -26,3 +26,4 @@ typehints_use_signature = True
 typehints_use_signature_return = True
 typehints_defaults = "braces-after"
 typehints_document_rtype_none = False
+typehints_strip_none_return = False

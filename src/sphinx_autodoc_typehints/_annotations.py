@@ -85,6 +85,8 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
     if isinstance(annotation, ForwardRef):
         return annotation.__forward_arg__
     if annotation is None or annotation is type(None):
+        if getattr(config, "typehints_strip_none_return", False):
+            return ""
         return ":py:obj:`None`"
     if annotation is Ellipsis:
         return ":py:data:`...<Ellipsis>`"
