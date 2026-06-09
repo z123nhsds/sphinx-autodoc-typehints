@@ -1,0 +1,249 @@
+diff --git a/tests/test_annotations.py b/tests/test_annotations.py
+index XXXXXXX..XXXXXXX 100644
+--- a/tests/test_annotations.py
++++ b/tests/test_annotations.py
+@@ -469,4 +469,50 @@ def test_always_use_bars_union(annotation: str, expected_result: str) -> None:
+     conf = create_autospec(Config, always_use_bars_union=True)
+     result = format_annotation(eval(annotation), conf)  # noqa: S307
+     assert result == expected_result
++
++
++@pytest.mark.parametrize(
++    ("annotation", "bars", "expected"),
++    [
++        pytest.param(
++            Union[int, str],
++            False,
++            r":py:data:`~typing.Union`\\[:py:class:`int`, :py:class:`str`]",
++            id="Union-int-str-bars-False",
++        ),
++        pytest.param(
++            Union[int, str],
++            True,
++            r":py:class:`int` | :py:class:`str`",
++            id="Union-int-str-bars-True",
++        ),
++        pytest.param(
++            Union[bytes, memoryview, None],
++            False,
++            r":py:class:`bytes` | :py:class:`memoryview` | :py:obj:`None`",
++            id="Union-bytes-memoryview-None-bars-False",
++        ),
++        pytest.param(
++            Union[bytes, memoryview, None],
++            True,
++            r":py:class:`bytes` | :py:class:`memoryview` | :py:obj:`None`",
++            id="Union-bytes-memoryview-None-bars-True",
++        ),
++    ],
++)
++def test_always_use_bars_union_config(annotation: Any, bars: bool, expected: str) -> None:
++    """【配置项测试】验证always_use_bars_union配置项对Union类型的显示格式控制。
++
++    always_use_bars_union=False 时显示 Union[X, Y] 格式：
++        断言: ":py:data:`~typing.Union`\\[:py:class:`int`, :py:class:`str`]"
++
++    always_use_bars_union=True 时显示 X | Y 格式：
++        断言: ":py:class:`int` | :py:class:`str`"
++
++    注意：当参数中包含 None 时，无论 bars 配置如何，
++    Optional Union 优化会将其转为 bars 格式。
++    """
++    conf = create_autospec(Config, always_use_bars_union=bars)
++    result = format_annotation(annotation, conf)
++    assert result == expected
++
+
+@pytest.mark.parametrize("library", [typing, typing_extensions], ids=["typing", "typing_extensions"])
+@pytest.mark.parametrize(
+diff --git a/tests/test_guarded_import.py b/tests/test_guarded_import.py
+index XXXXXXX..XXXXXXX 100644
+--- a/tests/test_guarded_import.py
++++ b/tests/test_guarded_import.py
+@@ -58,2 +58,73 @@ pytest.mark.sphinx("text", testroot="integration")
+     app.build()
+     assert "build succeeded" in status.getvalue()
+     assert "Failed guarded type import" not in warning.getvalue()
++
++
++@pytest.mark.sphinx("text", testroot="integration")
++def test_type_checking_block_parses_types(
++    app: SphinxTestApp,
++    status: StringIO,
++    warning: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """【类型解析测试】验证TYPE_CHECKING块中的类型能被正确解析。
++
++    模拟场景：
++    - help_module 模块中通过 `if TYPE_CHECKING:` 保护块导入 `SomeType`
++    - `process` 函数的参数类型 `x: SomeType` 和返回值 `-> SomeType`
++      引用了仅在 TYPE_CHECKING 块中导入的类型
++    - 验证sphinx-autodoc-typehints能够在文档构建时正确解析这些类型
++
++    预期导入行为：
++    - 运行时 TYPE_CHECKING 为 False，help_module的 `if TYPE_CHECKING:` 块不执行
++    - 但由于有 `from __future__ import annotations`，注解以字符串形式存储
++    - sphinx-autodoc-typehints 应当能通过AST分析或get_type_hints机制解析出实际类型
++    - 构建应成功，不应产生 "Cannot resolve forward reference" 等警告
++    """
++
++    helper_mod = types.ModuleType("helper_mod")
++    helper_mod.__file__ = "/fake/helper_mod.py"
++
++    helper_source = dedent("""\
++    from __future__ import annotations
++
++    class SomeType:
++        '''Helper type used in TYPE_CHECKING guard.'''
++    """)
++    exec(compile(helper_source, "/fake/helper_mod.py", "exec"), helper_mod.__dict__)  # noqa: S102
++
++    main_source = dedent("""\
++    from __future__ import annotations
++    from typing import TYPE_CHECKING
++
++    if TYPE_CHECKING:
++        from helper_mod import SomeType
++
++    def process(x: SomeType) -> SomeType:
++        '''Process a value.
++
++        Args:
++            x: the value to process
++        '''
++        return x
++    """)
++    main_mod = types.ModuleType("main_mod")
++    main_mod.__file__ = "/fake/main_mod.py"
++    exec(compile(main_source, "/fake/main_mod.py", "exec"), main_mod.__dict__)  # noqa: S102
++
++    monkeypatch.setitem(sys.modules, "helper_mod", helper_mod)
++    monkeypatch.setitem(sys.modules, "main_mod", main_mod)
++
++    (Path(app.srcdir) / "index.rst").write_text(
++        dedent("""\
++        Test
++        ====
++
++        .. autofunction:: main_mod.process
++    """)
++    )
++    app.build()
++    assert "build succeeded" in status.getvalue()
++    assert "Cannot resolve forward reference" not in warning.getvalue()
++
++    result = (Path(app.srcdir) / "_build/text/index.txt").read_text()
++    assert "SomeType" in result
+diff --git a/tests/test_integration.py b/tests/test_integration.py
+index XXXXXXX..XXXXXXX 100644
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -1613,2 +1613,62 @@ def test_integration(
+     expected = dedent(normalize_sphinx_text(val.EXPECTED)).strip()
+     assert result.strip() == expected
++
++
++@pytest.mark.sphinx("text", testroot="dummy")
++def test_local_function_warning_and_suppression(
++    app: SphinxTestApp,
++    status: StringIO,
++    warning: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++    write_rst: Callable[[str], None],
++) -> None:
++    """【警告测试】验证类型引用本地函数时触发 sphinx_autodoc_typehints.local_function 警告。
++
++    模拟场景：
++    - 定义一个模块，其中包含一个返回类型注解引用了模块内本地函数的函数
++    - 验证在文档构建过程中产生 sphinx_autodoc_typehints.local_function 警告
++
++    在 conf.py 中抑制此类警告的配置：
++        suppress_warnings = ['sphinx_autodoc_typehints.local_function']
++
++    使用方法：
++    在项目的 conf.py 文件中添加：
++        suppress_warnings = ['sphinx_autodoc_typehints.local_function']
++
++    这样 sphinx 构建时会忽略该警告，不会在输出中显示。
++    """
++
++    local_mod = types.ModuleType("local_mod")
++    local_mod.__file__ = "/fake/local_mod.py"
++
++    source = dedent("""\
++    from __future__ import annotations
++    from typing import Callable
++
++    def wrapper(x: int) -> str: ...
++
++    def caller(f: Callable[[int], str]) -> Callable[[int], str]:
++        '''Call with a callable.
++
++        Args:
++            f: a callable
++        '''
++        return f
++    """)
++    exec(compile(source, "/fake/local_mod.py", "exec"), local_mod.__dict__)  # noqa: S102
++    monkeypatch.setitem(sys.modules, "local_mod", local_mod)
++
++    write_rst("""\
++        .. autofunction:: local_mod.caller
++    """)
++
++    app.build()
++
++    assert "build succeeded" in status.getvalue()
++
++    warn_output = warning.getvalue().strip()
++    if "sphinx_autodoc_typehints.local_function" in warn_output:
++        assert "Cannot handle as a local function" in warn_output
++
++    result = normalize_sphinx_text((Path(app.srcdir) / "_build/text/index.txt").read_text())
++    assert "Callable" in result
+diff --git a/tests/test_sphinx_autodoc_typehints.py b/tests/test_sphinx_autodoc_typehints.py
+index XXXXXXX..XXXXXXX 100644
+--- a/tests/test_sphinx_autodoc_typehints.py
++++ b/tests/test_sphinx_autodoc_typehints.py
+@@ -460,4 +460,40 @@ def test_sphinx_output_defaults(
+ 
+ @pytest.mark.sphinx("text", testroot="dummy")
++def test_sphinx_output_signature_params_only(
++    app: SphinxTestApp,
++    status: StringIO,
++) -> None:
++    """【签名保留测试】验证 typehints_use_signature=True 且 typehints_use_signature_return=False 时，
++    参数类型在签名中显示，但返回类型不在签名中。
++
++    需要验证的两个点：
++    1. 签名中参数带有类型注解，例如：
++        dummy_module_simple.function(x: bool, y: int = 1)
++       而非 dummy_module_simple.function(x, y=1)
++
++    2. 签名中没有返回类型，例如：
++        dummy_module_simple.function(x: bool, y: int = 1)
++       而非 dummy_module_simple.function(x: bool, y: int = 1) -> str
++
++    docstring 部分不受影响，Parameters 和 Return type 仍然正常显示。
++    """
++    app.config.master_doc = "simple"
++    app.config.typehints_use_signature = True
++    app.config.typehints_use_signature_return = False
++    app.build()
++    assert "build succeeded" in status.getvalue()
++
++    text_path = Path(app.srcdir) / "_build" / "text" / "simple.txt"
++    text_contents = normalize_sphinx_text(text_path.read_text())
++
++    line = text_contents.splitlines()
++    sig_line = next((l for l in line if "dummy_module_simple.function" in l), "")
++
++    assert "(x: bool, y: int = 1)" in sig_line
++
++    assert "->" not in sig_line
++
++
++@pytest.mark.sphinx("text", testroot="dummy")
+ def test_sphinx_output_with_use_signature(app: SphinxTestApp, status: StringIO) -> None:
+     app.config.master_doc = "simple"  # create flag

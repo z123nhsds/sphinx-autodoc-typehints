@@ -468,6 +468,52 @@ def test_always_use_bars_union(annotation: str, expected_result: str) -> None:
     assert result == expected_result
 
 
+@pytest.mark.parametrize(
+    ("annotation", "bars", "expected"),
+    [
+        pytest.param(
+            Union[int, str],
+            False,
+            r":py:data:`~typing.Union`\\[:py:class:`int`, :py:class:`str`]",
+            id="Union-int-str-bars-False",
+        ),
+        pytest.param(
+            Union[int, str],
+            True,
+            r":py:class:`int` | :py:class:`str`",
+            id="Union-int-str-bars-True",
+        ),
+        pytest.param(
+            Union[bytes, memoryview, None],
+            False,
+            r":py:class:`bytes` | :py:class:`memoryview` | :py:obj:`None`",
+            id="Union-bytes-memoryview-None-bars-False",
+        ),
+        pytest.param(
+            Union[bytes, memoryview, None],
+            True,
+            r":py:class:`bytes` | :py:class:`memoryview` | :py:obj:`None`",
+            id="Union-bytes-memoryview-None-bars-True",
+        ),
+    ],
+)
+def test_always_use_bars_union_config(annotation: Any, bars: bool, expected: str) -> None:
+    """【配置项测试】验证always_use_bars_union配置项对Union类型的显示格式控制。
+
+    always_use_bars_union=False 时显示 Union[X, Y] 格式：
+        断言: ":py:data:`~typing.Union`\\[:py:class:`int`, :py:class:`str`]"
+
+    always_use_bars_union=True 时显示 X | Y 格式：
+        断言: ":py:class:`int` | :py:class:`str`"
+
+    注意：当参数中包含 None 时，无论 bars 配置如何，
+    Optional Union 优化会将其转为 bars 格式。
+    """
+    conf = create_autospec(Config, always_use_bars_union=bars)
+    result = format_annotation(annotation, conf)
+    assert result == expected
+
+
 @pytest.mark.parametrize("library", [typing, typing_extensions], ids=["typing", "typing_extensions"])
 @pytest.mark.parametrize(
     ("annotation", "params", "expected_result"),

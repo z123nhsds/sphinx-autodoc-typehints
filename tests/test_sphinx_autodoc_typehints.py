@@ -459,6 +459,42 @@ def test_sphinx_output_formatter_no_use_rtype(app: SphinxTestApp, status: String
 
 
 @pytest.mark.sphinx("text", testroot="dummy")
+def test_sphinx_output_signature_params_only(
+    app: SphinxTestApp,
+    status: StringIO,
+) -> None:
+    """【签名保留测试】验证 typehints_use_signature=True 且 typehints_use_signature_return=False 时，
+    参数类型在签名中显示，但返回类型不在签名中。
+
+    需要验证的两个点：
+    1. 签名中参数带有类型注解，例如：
+        dummy_module_simple.function(x: bool, y: int = 1)
+       而非 dummy_module_simple.function(x, y=1)
+
+    2. 签名中没有返回类型，例如：
+        dummy_module_simple.function(x: bool, y: int = 1)
+       而非 dummy_module_simple.function(x: bool, y: int = 1) -> str
+
+    docstring 部分不受影响，Parameters 和 Return type 仍然正常显示。
+    """
+    app.config.master_doc = "simple"
+    app.config.typehints_use_signature = True
+    app.config.typehints_use_signature_return = False
+    app.build()
+    assert "build succeeded" in status.getvalue()
+
+    text_path = Path(app.srcdir) / "_build" / "text" / "simple.txt"
+    text_contents = normalize_sphinx_text(text_path.read_text())
+
+    line = text_contents.splitlines()
+    sig_line = next((l for l in line if "dummy_module_simple.function" in l), "")
+
+    assert "(x: bool, y: int = 1)" in sig_line
+
+    assert "->" not in sig_line
+
+
+@pytest.mark.sphinx("text", testroot="dummy")
 def test_sphinx_output_with_use_signature(app: SphinxTestApp, status: StringIO) -> None:
     app.config.master_doc = "simple"  # create flag
     app.config.typehints_use_signature = True

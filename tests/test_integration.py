@@ -1612,3 +1612,63 @@ def test_integration(
 
     expected = dedent(normalize_sphinx_text(val.EXPECTED)).strip()
     assert result.strip() == expected
+
+
+@pytest.mark.sphinx("text", testroot="dummy")
+def test_local_function_warning_and_suppression(
+    app: SphinxTestApp,
+    status: StringIO,
+    warning: StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+    write_rst: Callable[[str], None],
+) -> None:
+    """【警告测试】验证类型引用本地函数时触发 sphinx_autodoc_typehints.local_function 警告。
+
+    模拟场景：
+    - 定义一个模块，其中包含一个返回类型注解引用了模块内本地函数的函数
+    - 验证在文档构建过程中产生 sphinx_autodoc_typehints.local_function 警告
+
+    在 conf.py 中抑制此类警告的配置：
+        suppress_warnings = ['sphinx_autodoc_typehints.local_function']
+
+    使用方法：
+    在项目的 conf.py 文件中添加：
+        suppress_warnings = ['sphinx_autodoc_typehints.local_function']
+
+    这样 sphinx 构建时会忽略该警告，不会在输出中显示。
+    """
+
+    local_mod = types.ModuleType("local_mod")
+    local_mod.__file__ = "/fake/local_mod.py"
+
+    source = dedent("""\
+    from __future__ import annotations
+    from typing import Callable
+
+    def wrapper(x: int) -> str: ...
+
+    def caller(f: Callable[[int], str]) -> Callable[[int], str]:
+        '''Call with a callable.
+
+        Args:
+            f: a callable
+        '''
+        return f
+    """)
+    exec(compile(source, "/fake/local_mod.py", "exec"), local_mod.__dict__)  # noqa: S102
+    monkeypatch.setitem(sys.modules, "local_mod", local_mod)
+
+    write_rst("""\
+        .. autofunction:: local_mod.caller
+    """)
+
+    app.build()
+
+    assert "build succeeded" in status.getvalue()
+
+    warn_output = warning.getvalue().strip()
+    if "sphinx_autodoc_typehints.local_function" in warn_output:
+        assert "Cannot handle as a local function" in warn_output
+
+    result = normalize_sphinx_text((Path(app.srcdir) / "_build/text/index.txt").read_text())
+    assert "Callable" in result
