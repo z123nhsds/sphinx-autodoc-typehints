@@ -1,0 +1,130 @@
+--- a/tests/test_resolver/test_type_hints.py
++++ b/tests/test_resolver/test_type_hints.py
+@@ -95,14 +95,46 @@ def test_guarded_import_warning_includes_module() -> None:
+     mock_logger.warning.assert_called_once()
+     args = mock_logger.warning.call_args
+     assert "fake_mod" in str(args)
+ 
+ 
++def test_get_type_hint_resolves_type_from_type_checking_block(monkeypatch: pytest.MonkeyPatch) -> None:
++    guarded_dep = types.ModuleType("guarded_dep")
++
++    class GuardedType:
++        pass
++
++    guarded_dep.GuardedType = GuardedType
++    guarded_user = types.ModuleType("guarded_user")
++    guarded_user.__file__ = "/fake/guarded_user.py"
++    source = (
++        "from __future__ import annotations\n"
++        "from typing import TYPE_CHECKING\n\n"
++        "if TYPE_CHECKING:\n"
++        "    from guarded_dep import GuardedType\n\n"
++        "def func(value: GuardedType) -> GuardedType:\n"
++        "    return value\n"
++    )
++    exec(compile(source, guarded_user.__file__, "exec"), guarded_user.__dict__)
++
++    monkeypatch.setitem(sys.modules, "guarded_dep", guarded_dep)
++    monkeypatch.setitem(sys.modules, "guarded_user", guarded_user)
++    _TYPE_GUARD_IMPORTS_RESOLVED.discard("guarded_user")
++
++    try:
++        assert "GuardedType" not in guarded_user.__dict__
++        result = _get_type_hint([], "guarded_user.func", guarded_user.func, {})
++        assert result["value"] is GuardedType
++        assert result["return"] is GuardedType
++        assert guarded_user.__dict__["GuardedType"] is GuardedType
++    finally:
++        _TYPE_GUARD_IMPORTS_RESOLVED.discard("guarded_user")
++
++
+ def test_build_localns_adds_ancestor_classes() -> None:
+     import tests.roots.test_nested_attrs_localns as mod  # noqa: PLC0415
+ 
+     assert _build_localns(mod.Outer.Inner.__init__, {})["Outer"] is mod.Outer
+--- a/tests/test_init.py
++++ b/tests/test_init.py
+@@ -143,7 +143,9 @@ def test_local_function_warning_includes_location() -> None:
+     with patch("sphinx_autodoc_typehints._LOGGER", mock_logger):
+         process_signature(app, "method", "test.outer.<locals>.inner", fake_method, MagicMock(), "", "")
+     mock_logger.warning.assert_called_once()
+     kwargs = mock_logger.warning.call_args.kwargs
++    assert kwargs["type"] == "sphinx_autodoc_typehints"
++    assert kwargs["subtype"] == "local_function"
+     assert "location" in kwargs
+     assert kwargs["location"] == get_obj_location(fake_method)
+ 
+--- a/tests/test_sphinx_autodoc_typehints.py
++++ b/tests/test_sphinx_autodoc_typehints.py
+@@ -459,6 +459,24 @@ def test_sphinx_output_formatter_no_use_rtype(app: SphinxTestApp, status: StringI
+     """
+     assert text_contents == normalize_sphinx_text(dedent(expected_contents))
+ 
+ 
++@pytest.mark.parametrize(
++    ("always_use_bars_union", "expected_return"),
++    [(False, "Union[str, int]"), (True, '"str" | "int"')],
++    ids=["typing-union", "bars-union"],
++)
++@pytest.mark.sphinx("text", testroot="dummy")
++def test_sphinx_output_respects_always_use_bars_union(
++    app: SphinxTestApp, status: StringIO, always_use_bars_union: bool, expected_return: str
++) -> None:
++    app.config.master_doc = "simple_no_use_rtype"
++    app.config.typehints_use_rtype = False
++    app.config.always_use_bars_union = always_use_bars_union
++    app.build()
++    assert "build succeeded" in status.getvalue()
++    text_path = Path(app.srcdir) / "_build" / "text" / "simple_no_use_rtype.txt"
++    text_contents = normalize_sphinx_text(text_path.read_text())
++    assert expected_return in text_contents
++
++
+ @pytest.mark.sphinx("text", testroot="dummy")
+ def test_sphinx_output_with_use_signature(app: SphinxTestApp, status: StringIO) -> None:
+     app.config.master_doc = "simple"  # create flag
+@@ -486,6 +504,18 @@ def test_sphinx_output_with_use_signature(app: SphinxTestApp, status: StringIO) -
+     """
+     assert text_contents == normalize_sphinx_text(dedent(expected_contents))
+ 
+ 
++@pytest.mark.sphinx("text", testroot="dummy")
++def test_sphinx_output_with_use_signature_without_return_annotation(app: SphinxTestApp, status: StringIO) -> None:
++    app.config.master_doc = "simple"
++    app.config.typehints_use_signature = True
++    app.config.typehints_use_signature_return = False
++    app.build()
++    assert "build succeeded" in status.getvalue()
++    text_path = Path(app.srcdir) / "_build" / "text" / "simple.txt"
++    text_contents = normalize_sphinx_text(text_path.read_text())
++    assert "dummy_module_simple.function(x: bool, y: int = 1)" in text_contents
++    assert "dummy_module_simple.function(x: bool, y: int = 1) -> str" not in text_contents
++
++
+ @pytest.mark.sphinx("text", testroot="dummy")
+ def test_sphinx_output_with_use_signature_return(app: SphinxTestApp, status: StringIO) -> None:
+     app.config.master_doc = "simple"  # create flag
+--- a/tests/test_integration.py
++++ b/tests/test_integration.py
+@@ -1611,4 +1611,17 @@ def test_integration(
+     result = normalize_sphinx_text((Path(app.srcdir) / "_build/text/index.txt").read_text())
+ 
+     expected = dedent(normalize_sphinx_text(val.EXPECTED)).strip()
+     assert result.strip() == expected
++
++
++@pytest.mark.sphinx("text", testroot="integration")
++def test_local_function_warning_can_be_suppressed(
++    app: SphinxTestApp,
++    status: StringIO,
++    warning: StringIO,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    (Path(app.srcdir) / "index.rst").write_text(AUTO_CLASS.format("Class"))
++    app.config.suppress_warnings = ["sphinx_autodoc_typehints.local_function"]
++    app.config.always_use_bars_union = True
++    monkeypatch.setitem(sys.modules, "mod", sys.modules[__name__])
++    app.build()
++    assert "build succeeded" in status.getvalue()
++    assert not warning.getvalue().strip()
