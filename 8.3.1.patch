@@ -1,0 +1,43 @@
+diff --git a/8.3.1.patch b/8.3.1.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/conf.patch b/conf.patch
+new file mode 100644
+index 0000000..e47b6b1
+--- /dev/null
++++ b/conf.patch
+@@ -0,0 +1,33 @@
++diff --git a/conf.py b/conf.py
++--- a/conf.py
+++++ b/conf.py
++@@ -1,2 +1,26 @@
++-extensions = ["sphinx.ext.autodoc"]
++-autodoc_typehints = "description"
+++extensions = [
+++    "sphinx.ext.autodoc",
+++    "sphinx.ext.napoleon",
+++    "sphinx_autodoc_typehints",
+++]
+++
+++# --- Napoleon: Google 风格 docstring ---
+++napoleon_google_docstring = True
+++napoleon_numpy_docstring = False
+++
+++# --- sphinx-autodoc-typehints ---
+++
+++# 使用 X | Y 联合类型语法
+++always_use_bars_union = True
+++
+++# 不显示 None 返回类型
+++typehints_document_rtype_none = False
+++
+++# 默认值以 braces-after 方式显示
+++typehints_defaults = "braces-after"
+++
+++# 保留函数签名中的参数类型和返回类型
+++typehints_use_signature = True
+++typehints_use_signature_return = True
+++
+++# 修复 gi.repository.Gtk.Window 的 intersphinx 链接
+++typehints_fixup_module_name = lambda module: module.removeprefix("gi.repository.") if module.startswith("gi.repository.") else module
+\ No newline at end of file
