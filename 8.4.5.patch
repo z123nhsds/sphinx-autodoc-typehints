@@ -1,0 +1,398 @@
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@ -1,5 +1,10 @@
+ """
+ Annotation inspection and RST formatting.
++
++功能迭代说明：
++1. Python 3.10+ 支持 X | Y 联合类型语法（需 from __future__ import annotations）
++2. Python 3.14+ X | Y 成为默认行为，无需 always_use_bars_union 设置
++3. 支持 Annotated[T, Doc(...)] 描述信息提取
++4. 支持 :no-overloads: 指令按函数禁用 @overload 显示
+ 
+ Converts Python type annotations into reStructuredText cross-reference markup for Sphinx output.
+ Handles standard library types, typing constructs (Union, Optional, Literal, NewType, etc.),
+@@ -146,11 +151,15 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
+     args_format = "\\[{}]"
+     formatted_args: str | None = ""
+ 
++    # Python 3.14+ 默认使用 X | Y 语法，无需 always_use_bars_union 设置
++    # Python 3.10-3.13 需要显式设置 always_use_bars_union = True
+     always_use_bars_union: bool = getattr(config, "always_use_bars_union", True)
+     is_bars_union = (
+-        (sys.version_info >= (3, 14) and full_name == "typing.Union")
++        # Python 3.14+ 自动启用 bars union 语法
++        (sys.version_info >= (3, 14) and full_name == "typing.Union")
+         or full_name == "types.UnionType"
+-        or (always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias")
++        # 用户显式启用时，对所有 Union 类型使用 bars 语法
++        or (always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias")
+     )
+     if is_bars_union:
+         full_name = ""
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@ -1,5 +1,15 @@
+ """Sphinx autodoc type hints."""
+ 
++功能迭代方案：
++============
++
++1. X | Y 联合类型语法支持
++   - Python 3.10+ 通过 `from __future__ import annotations` 支持
++   - Python 3.14+ 成为默认行为，无需 `always_use_bars_union` 设置
++
++2. Annotated[T, Doc(...)] 描述信息提取
++   - 从 __metadata__ 中提取 Doc 对象的 documentation 属性
++   - 自动写入 docstring 的 :param: 和 :return: 字段
++
++3. @overload 按函数禁用
++   - 在 docstring 中添加 `:no-overloads:` 指令
++   - 该函数将不显示 @overload 签名
++
+ from __future__ import annotations
+ 
+ import inspect
+@@ -265,6 +275,7 @@ def _inject_overload_signatures(
+     lines: list[str],
+ ) -> bool:
+     if what not in {"function", "method"} or not app.config.typehints_document_overloads:
+         return False
++    # 检测 :no-overloads: 指令，允许按函数禁用 overload 显示
+     if _strip_no_overloads_directive(lines):
+         return False
+     if (overloads := _resolve_overloads(obj)) is None:
+@@ -275,6 +286,10 @@ def _inject_overload_signatures(
+ 
+ 
+ def _strip_no_overloads_directive(lines: list[str]) -> bool:
++    """
++    从 docstring 中检测并移除 :no-overloads: 指令。
++    
++    当 docstring 中包含此指令时，该函数将不显示 @overload 签名。
++    用法：在函数的 docstring 中添加 `:no-overloads:` 即可。
++    """
+     for idx, line in enumerate(lines):
+         if line.strip() == ":no-overloads:":
+             del lines[idx]
+@@ -315,6 +330,15 @@ def _inject_arg_signature(
+     annotation = type_hints.get(arg_name)
+     default = signature.parameters[arg_name].default
++    
++    # 从 Annotated[T, Doc(...)] 中提取描述信息
++    # 支持 typing_extensions.Doc 和 Python 3.14+ 的 typing.Doc
+     doc_description = _extract_doc_description(annotation) if annotation is not None else None
+ 
+     if arg_name.endswith("_"):
+@@ -335,6 +359,10 @@ def _inject_arg_signature(
+         arg_name = fmt.get_arg_name_from_line(lines[insert_index]) or arg_name
+ 
++    # 如果类型注解包含 Doc 描述且 docstring 中没有对应的 :param: 字段，
++    # 则自动添加 :param arg_name: description 到 docstring
+     if insert_index is not None and doc_description:
+         lines.append(f":param {arg_name}: {doc_description}")
+         insert_index = len(lines) - 1
+@@ -430,6 +458,15 @@ def _inject_rtype(
+     if _has_yields_section(lines) and _is_generator_type(type_hints["return"]):
+         return
+ 
++    # 从返回值的 Annotated[T, Doc(...)] 中提取描述信息
++    # 如果 docstring 中没有 :return: 或 :returns: 字段，则自动添加
+     if (return_doc := _extract_doc_description(type_hints["return"])) and not any(
+         line.lstrip().startswith((":return:", ":returns:")) for line in lines
+     ):
+@@ -505,6 +542,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("always_document_param_types", False, "html")  # noqa: FBT003
+     app.add_config_value("typehints_fully_qualified", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_document_rtype", True, "env")  # noqa: FBT003
+@@ -514,6 +552,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("typehints_defaults", None, "env")
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
++    # Python 3.14+ 默认启用，旧版本需显式设置为 True
+     app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
+     app.add_config_value("typehints_formatter", None, "")
+     app.add_config_value("typehints_document_overloads", True, "env")  # noqa: FBT003
+diff --git a/src/sphinx_autodoc_typehints/_doc_extract.py b/src/sphinx_autodoc_typehints/_doc_extract.py
+new file mode 100644
+--- /dev/null
++++ b/src/sphinx_autodoc_typehints/_doc_extract.py
+@@ -0,0 +1,85 @@
++"""
++Annotated[T, Doc(...)] 描述信息提取模块。
++
++从 Python 类型注解中提取 Doc 元数据，并转换为 Sphinx docstring 格式。
++支持 typing_extensions.Doc 和 Python 3.14+ 的 typing.Doc。
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING, Any
++
++if TYPE_CHECKING:
++    from sphinx.application import Sphinx
++
++
++def extract_annotated_doc(
++    annotation: Any,
++    arg_name: str,
++    lines: list[str],
++) -> bool:
++    """
++    从 Annotated[T, Doc(...)] 中提取描述信息并写入 docstring。
++    
++    参数:
++        annotation: 类型注解，可能是 Annotated[T, Doc("description")] 或普通类型
++        arg_name: 参数名称
++        lines: docstring 行列表（会被修改）
++        
++    返回:
++        bool: 是否成功提取到 Doc 描述
++        
++    示例:
++        >>> def func(name: Annotated[str, Doc("The user's name")]) -> None:
++        ...     pass
++        >>> # 自动在 docstring 中添加 :param name: The user's name
++    """
++    doc = _extract_doc_description(annotation)
++    if doc is None:
++        return False
++    
++    # 检查是否已存在该参数的 :param: 字段
++    # docstring 中的描述优先级更高
++    if _has_param_doc(lines, arg_name):
++        return False
++    
++    # 添加 :param arg_name: description 到 docstring
++    lines.append(f":param {arg_name}: {doc}")
++    return True
++
++
++def extract_return_doc(
++    return_annotation: Any,
++    lines: list[str],
++) -> bool:
++    """
++    从返回值的 Annotated[T, Doc(...)] 中提取描述信息并写入 docstring。
++    
++    参数:
++        return_annotation: 返回类型注解
++        lines: docstring 行列表（会被修改）
++        
++    返回:
++        bool: 是否成功提取到 Doc 描述
++        
++    示例:
++        >>> def func() -> Annotated[str, Doc("The greeting message")]:
++        ...     pass
++        >>> # 自动在 docstring 中添加 :return: The greeting message
++    """
++    doc = _extract_doc_description(return_annotation)
++    if doc is None:
++        return False
++    
++    # 检查是否已存在 :return: 或 :returns: 字段
++    if _has_return_doc(lines):
++        return False
++    
++    # 添加 :return: description 到 docstring
++    lines.append(f":return: {doc}")
++    return True
++
++
++def _extract_doc_description(annotation: Any) -> str | None:
++    """从 Annotated 类型的 __metadata__ 中提取 Doc 描述。"""
++    if not (hasattr(annotation, "__metadata__") and hasattr(annotation, "__origin__")):
++        return None
++    for meta in annotation.__metadata__:
++        if type(meta).__qualname__ == "Doc" and type(meta).__module__ in {"typing_extensions", "typing"}:
++            return meta.documentation
++    return None
++
++
++def _has_param_doc(lines: list[str], arg_name: str) -> bool:
++    """检查 docstring 中是否已存在该参数的 :param: 字段。"""
++    param_prefix = f":param {arg_name}:"
++    return any(line.lstrip().startswith(param_prefix) for line in lines)
++
++
++def _has_return_doc(lines: list[str]) -> bool:
++    """检查 docstring 中是否已存在 :return: 或 :returns: 字段。"""
++    return any(
++        line.lstrip().startswith((":return:", ":returns:"))
++        for line in lines
++    )
+diff --git a/docs/feature_iteration.md b/docs/feature_iteration.md
+new file mode 100644
+--- /dev/null
++++ b/docs/feature_iteration.md
+@@ -0,0 +1,150 @@
++# sphinx-autodoc-typehints 功能迭代方案
++
++## 1. X | Y 联合类型语法支持
++
++### Python 版本演进
++
++| Python 版本 | X | Y 语法支持 | 说明 |
++------------|-------------|------|
++| 3.9 及以下 | ❌ 不支持 | 只能使用 `Union[X, Y]` |
++| 3.10-3.13 | ⚠️ 需 `from __future__ import annotations` | 需要显式导入 future annotations |
++| 3.14+ | ✅ 默认支持 | 无需任何设置，X | Y 成为默认行为 |
++
++### 配置说明
++
++```python
++# conf.py
++
++# Python 3.10-3.13: 需要显式启用
++always_use_bars_union = True
++
++# Python 3.14+: 自动启用，无需配置
++# always_use_bars_union = False  # 默认值，但会被 Python 3.14+ 覆盖
++```
++
++### 实现逻辑
++
++```python
++# _annotations.py 中的判断逻辑
++is_bars_union = (
++    # Python 3.14+ 自动启用
++    (sys.version_info >= (3, 14) and full_name == "typing.Union")
++    # types.UnionType 是 X | Y 的内部表示
++    or full_name == "types.UnionType"
++    # 用户显式启用时对所有 Union 使用 bars 语法
++    or (always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias")
++)
++```
++
++---
++
++## 2. Annotated[T, Doc(...)] 描述信息提取
++
++### 功能说明
++
++从 `Annotated[T, Doc("description")]` 类型注解中提取描述信息，并自动写入 Sphinx docstring。
++
++### 支持的 Doc 类型
++
++- `typing_extensions.Doc` (Python 3.9-3.13)
++- `typing.Doc` (Python 3.14+)
++
++### 使用示例
++
++```python
++from typing import Annotated
++from typing_extensions import Doc
++
++def greet(
++    name: Annotated[str, Doc("The person's name")],
++    greeting: Annotated[str, Doc("The greeting phrase")]
++) -> Annotated[str, Doc("The full greeting message")]:
++    """Say hello."""
++    return f"{greeting}, {name}!"
++```
++
++生成的 docstring 会自动包含：
++
++```rst
++:param name: The person's name
++:type name: :py:class:`str`
++:param greeting: The greeting phrase
++:type greeting: :py:class:`str`
++:return: The full greeting message
++:rtype: :py:class:`str`
++```
++
++### 提取逻辑
++
++```python
++def _extract_doc_description(annotation: Any) -> str | None:
++    """从 Annotated 类型的 __metadata__ 中提取 Doc 描述。"""
++    if not (hasattr(annotation, "__metadata__") and hasattr(annotation, "__origin__")):
++        return None
++    for meta in annotation.__metadata__:
++        if type(meta).__qualname__ == "Doc" and type(meta).__module__ in {"typing_extensions", "typing"}:
++            return meta.documentation
++    return None
++```
++
++### 优先级规则
++
++1. **docstring 中的描述优先级最高**：如果 docstring 中已有 `:param name: description`，则不会覆盖
++2. **Annotated Doc 作为补充**：当 docstring 中没有对应参数描述时，自动从 Doc 中提取
++
++---
++
++## 3. @overload 按函数禁用
++
++### 功能说明
++
++通过在 docstring 中添加 `:no-overloads:` 指令，可以按函数级别控制是否显示 `@overload` 签名。
++
++### 使用示例
++
++```python
++from typing import overload
++
++@overload
++def process(value: int) -> int: ...
++
++@overload
++def process(value: str) -> str: ...
++
++def process(value: int | str) -> int | str:
++    """
++    Process a value.
++    
++    :no-overloads:
++    
++    This function will not show overload signatures in documentation.
++    """
++    return value
++```
++
++### 实现逻辑
++
++```python
++def _strip_no_overloads_directive(lines: list[str]) -> bool:
++    """
++    从 docstring 中检测并移除 :no-overloads: 指令。
++    
++    当 docstring 中包含此指令时，该函数将不显示 @overload 签名。
++    """
++    for idx, line in enumerate(lines):
++        if line.strip() == ":no-overloads:":
++            del lines[idx]
++            return True
++    return False
++
++def _inject_overload_signatures(...):
++    if what not in {"function", "method"} or not app.config.typehints_document_overloads:
++        return False
++    # 检测 :no-overloads: 指令
++    if _strip_no_overloads_directive(lines):
++        return False  # 禁用该函数的 overload 显示
++    # ... 正常注入 overload 签名
++```
++
++### 配置选项
++
++```python
++# conf.py
++
++# 全局启用/禁用 overload 显示
++typehints_document_overloads = True  # 默认启用
++
++# 按函数控制：在 docstring 中添加 :no-overloads:
++```
++
++---
++
++## 总结
++
++| 功能 | 配置方式 | 默认行为 |
++|------|---------|---------|
++| X | Y 联合类型 | `always_use_bars_union = True` (Python 3.10-3.13) | Python 3.14+ 自动启用 |
++| Annotated Doc | 无需配置，自动提取 | 从 `__metadata__` 中提取 Doc 描述 |
++| @overload 禁用 | `:no-overloads:` 指令 | 默认显示 overload 签名 |
