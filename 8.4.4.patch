@@ -1,0 +1,294 @@
+diff --git a/src/sphinx_autodoc_typehints/_annotations.py b/src/sphinx_autodoc_typehints/_annotations.py
+index 6bde93a..a1b2c3d 100644
+--- a/src/sphinx_autodoc_typehints/_annotations.py
++++ b/src/sphinx_autodoc_typehints/_annotations.py
+@@ -56,6 +56,61 @@ _TYPES_DICT[types.FunctionType] = "FunctionType"
+ )
+ 
+ 
++# ---------------------------------------------------------------------------
++# Union type bar syntax version detection (PEP 604)
++# ---------------------------------------------------------------------------
++#
++# PEP 604 (accepted 2020-10-05, Python 3.10) introduced the ``X | Y`` union
++# type syntax as a first-class language feature backed by ``types.UnionType``.
++# This makes it the idiomatic way to express unions from Python 3.10 onward.
++#
++# Prior to Python 3.10, ``Union[X, Y]`` from the ``typing`` module was the
++# only option, so the bar syntax is never the default on older runtimes.
++#
++# Python 3.14 (2025-10) deprecates ``typing.Union`` itself.  At that point
++# the bar form becomes *unconditional* for all union annotations, regardless
++# of any configuration value.
++
++
++def _get_union_bars_default() -> bool:
++    """Return the platform-appropriate default for ``always_use_bars_union``."""
++    return sys.version_info >= (3, 10)
++
++
++def _should_use_bars_union(config: Config, annotation: Any, full_name: str) -> bool:
++    """
++    Determine whether a union-type annotation should render as ``X | Y``.
++
++    Three-tier decision logic (first match wins):
++
++    1. **Python 3.14+ mandatory**: ``typing.Union`` on Python >= 3.14 is
++       *always* rendered as bars because the ``typing.Union`` form is
++       deprecated in the standard library.
++
++    2. **Native ``types.UnionType``**: When the annotation was already
++       written with the ``X | Y`` syntax (PEP 604), its runtime origin is
++       ``types.UnionType``.  Bar rendering is forced — the author already
++       chose it in source code.
++
++    3. **Config-controlled**: For ``typing.Union[X, Y]`` on Python 3.10
++       through 3.13, bar rendering is governed by ``always_use_bars_union``.
++       Since Python 3.10 natively supports ``X | Y``, the config now
++       defaults to ``True`` on Python >= 3.10 (see ``_get_union_bars_default``).
++    """
++    if sys.version_info >= (3, 14) and full_name == "typing.Union":
++        return True
++    if full_name == "types.UnionType":
++        return True
++    always_use_bars_union: bool = getattr(
++        config, "always_use_bars_union", _get_union_bars_default()
++    )
++    return always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias"
++
++
++# ---------------------------------------------------------------------------
++# Annotation formatting
++# ---------------------------------------------------------------------------
++
+ class MyTypeAliasForwardRef(TypeAliasForwardRef):
+     crossref: bool = False
+ 
+@@ -146,15 +201,7 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
+     role = "data" if (module, class_name) in _PYDATA_ANNOTATIONS else "class"
+     args_format = "\\[{}]"
+     formatted_args: str | None = ""
+-
+-    always_use_bars_union: bool = getattr(config, "always_use_bars_union", True)
+-    is_bars_union = (
+-        (sys.version_info >= (3, 14) and full_name == "typing.Union")
+-        or full_name == "types.UnionType"
+-        or (always_use_bars_union and type(annotation).__qualname__ == "_UnionGenericAlias")
+-    )
+-    if is_bars_union:
++    if _should_use_bars_union(config, annotation, full_name):
+         full_name = ""
+ 
+     if full_name == "typing.NewType":
+@@ -164,6 +211,31 @@ def format_annotation(annotation: Any, config: Config, *, short_literals: bool =
+         newtype_prefix = "" if fully_qualified or not newtype_module else "~"
+         supertype = format_annotation(annotation.__supertype__, config, short_literals=short_literals)
+         return f":py:class:`{newtype_prefix}{newtype_qualified}` ({supertype})"
++
++    # =====================================================================
++    # Annotated[T, Doc(...)] — PEP 727 metadata extraction
++    # =====================================================================
++    # ``typing.Annotated[T, *metadata]`` carries ``__origin__`` (the base
++    # type ``T``) and ``__metadata__`` (a tuple of arbitrary annotation
++    # markers).  During formatting we render *only the origin type* ``T``,
++    # discarding all metadata.  The ``Doc(...)`` payload is separately
++    # consumed by ``_extract_doc_description()`` in ``__init__.py`` so that
++    # the description text lands next to the ``:param:`` / ``:return:``
++    # entries in the rendered docstring.
++    #
++    # Example annotation:
++    #
++    #     def greet(name: Annotated[str, Doc("The person's name")]) -> str:
++    #
++    # Rendered output (Sphinx field-list format):
++    #
++    #     :param name: The person's name
++    #     :type name: :py:class:`str`
++    #
++    # Both ``typing.Doc`` (stdlib, Python >= 3.13) and
++    # ``typing_extensions.Doc`` (backport for older Python) are recognised
++    # by ``_extract_doc_description``.
++    # =====================================================================
+     if full_name == "typing.Annotated":
+         return format_annotation(annotation.__origin__, config, short_literals=short_literals)
+     if full_name in {"typing.TypeVar", "typing.ParamSpec"}:
+diff --git a/src/sphinx_autodoc_typehints/__init__.py b/src/sphinx_autodoc_typehints/__init__.py
+index f3b2c91..d9e8f7a 100644
+--- a/src/sphinx_autodoc_typehints/__init__.py
++++ b/src/sphinx_autodoc_typehints/__init__.py
+@@ -23,6 +23,7 @@ from ._annotations import (
+     get_annotation_args,
+     get_annotation_class_name,
+     get_annotation_module,
++    _get_union_bars_default,
+     unescape,
+ )
+ from ._formats import detect_format
+@@ -211,6 +212,47 @@ def _is_dataclass(name: str, what: str, qualname: str) -> bool:
+ 
+ def _inject_overload_signatures(
+     app: Sphinx,
+     what: str,
+     name: str,  # noqa: ARG001
+     obj: Any,
+     lines: list[str],
+ ) -> bool:
++    """
++    Inject ``:Overloads:`` field-list entries into the docstring preamble.
++
++    Overload rendering is governed by two independent mechanisms:
++
++    1. **Global — ``typehints_document_overloads``**: Set to ``False`` in
++       ``conf.py`` to suppress overload signatures project-wide.
++
++    2. **Per-function — ``:no-overloads:`` directive**: Insert the literal
++       string ``:no-overloads:`` as the *first line* of the docstring body
++       to opt-out a single callable.  The line is consumed (stripped from
++       the rendered output) and prevents overload injection for that entry.
++
++    Usage example — per-function opt-out::
++
++        @overload
++        def f(x: int) -> str: ...
++        @overload
++        def f(x: str) -> bool: ...
++        def f(x):
++            """:no-overloads:
++
++            Accepts ``int`` or ``str``; overloads are documented inline.
++            """
++
++    The ``:no-overloads:`` directive *must* appear on its own line as the
++    very first non-empty content of the docstring.  Leading whitespace is
++    tolerated (the check uses ``.strip()``).
++
++    Returns
++    -------
++    bool
++        ``True`` when overload signatures were injected into ``lines``,
++        ``False`` otherwise (global disable, per-function opt-out, or no
++        overloads discovered).
++    """
+     if what not in {"function", "method"} or not app.config.typehints_document_overloads:
+         return False
+     if _strip_no_overloads_directive(lines):
+@@ -466,11 +508,48 @@ def _inject_ivar_types(ivar_annotations: dict[str, Any], app: Sphinx, lines: lis
+ 
+ 
+ def _extract_doc_description(annotation: Any) -> str | None:
++    """
++    Extract description text from ``Annotated[T, Doc("...")]`` (PEP 727).
++
++    PEP 727 defines ``typing.Doc`` as a metadata marker that carries a
++    human-readable description alongside a type annotation.  This function
++    walks ``annotation.__metadata__`` and returns the ``documentation``
++    attribute of the *first* ``Doc`` instance encountered.
++
++    Both the standard library ``typing.Doc`` (Python >= 3.13) and the
++    backport ``typing_extensions.Doc`` are recognised.
++
++    Parameters
++    ----------
++    annotation : Any
++        A Python type annotation, typically an instance of
++        ``typing.Annotated`` (internally ``typing._AnnotatedAlias``).
++
++    Returns
++    -------
++    str | None
++        The documentation string if at least one ``Doc`` marker is present
++        inside ``__metadata__``; ``None`` otherwise.
++
++    Notes
++    -----
++    - Only the **first** ``Doc`` is returned.  Multiple ``Doc`` markers in
++      the same ``Annotated`` are legal but the second and subsequent ones
++      are silently ignored.  Authors who need multi-sentence descriptions
++      should compose them into a single ``Doc``.
++    - The extraction runs during ``process_docstring``.  When a docstring
++      already contains a ``:param x: ...`` entry, the manually written text
++      **takes precedence** — the ``Doc`` description is only injected for
++      parameters that lack an explicit description.
++    """
+     if not (hasattr(annotation, "__metadata__") and hasattr(annotation, "__origin__")):
+         return None
+     for meta in annotation.__metadata__:
+-        if type(meta).__qualname__ == "Doc" and type(meta).__module__ in {"typing_extensions", "typing"}:
+-            return meta.documentation
++        meta_type = type(meta)
++        if meta_type.__qualname__ == "Doc":
++            if meta_type.__module__ in {"typing", "typing_extensions"}:
++                return getattr(meta, "documentation", None)
+     return None
+ 
+ 
+@@ -512,7 +591,7 @@ def setup(app: Sphinx) -> dict[str, bool | str]:
+     app.add_config_value("typehints_use_rtype", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_defaults", None, "env")
+     app.add_config_value("simplify_optional_unions", True, "env")  # noqa: FBT003
+-    app.add_config_value("always_use_bars_union", False, "env")  # noqa: FBT003
++    app.add_config_value("always_use_bars_union", _get_union_bars_default(), "env")  # noqa: FBT003
+     app.add_config_value("typehints_formatter", None, "")
+     app.add_config_value("typehints_document_overloads", True, "env")  # noqa: FBT003
+     app.add_config_value("typehints_use_signature", False, "env")  # noqa: FBT003
+diff --git a/tests/test_annotations.py b/tests/test_annotations.py
+index d4e5f6a..7b8c9d0 100644
+--- a/tests/test_annotations.py
++++ b/tests/test_annotations.py
+@@ -465,12 +465,62 @@ class TestBarsUnionDefault:
+     ...
+ 
+ 
++class TestUnionBarsPEP604Defaults:
++    """Python-version-aware defaults for ``_get_union_bars_default``."""
++
++    @pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10+")
++    def test_default_true_on_python310_plus(self) -> None:
++        from sphinx_autodoc_typehints._annotations import _get_union_bars_default
++        assert _get_union_bars_default() is True, (
++            "Python 3.10+ (PEP 604) defaults to X | Y union syntax"
++        )
++
++    @pytest.mark.skipif(sys.version_info >= (3, 10), reason="Python < 3.10 only")
++    def test_default_false_on_python_below_310(self) -> None:
++        from sphinx_autodoc_typehints._annotations import _get_union_bars_default
++        assert _get_union_bars_default() is False, (
++            "Python < 3.10 defaults to Union[X, Y] syntax"
++        )
++
++    @pytest.mark.skipif(sys.version_info < (3, 14), reason="Python 3.14+ only")
++    def test_mandatory_on_python314_plus(self) -> None:
++        from sphinx_autodoc_typehints._annotations import _should_use_bars_union
++        from unittest.mock import create_autospec
++
++        from sphinx.config import Config
++
++        conf = create_autospec(Config, always_use_bars_union=False)
++        annotation = Union[int, str]
++        assert _should_use_bars_union(conf, annotation, "typing.Union") is True, (
++            "Python 3.14+ mandates bars for typing.Union regardless of config"
++        )
++
++
++class TestExtractDocDescription:
++    """Extended coverage for ``_extract_doc_description``."""
++
++    def test_multiple_docs_returns_first(self) -> None:
++        annotation = Annotated[int, Doc("alpha"), Doc("beta")]
++        assert _extract_doc_description(annotation) == "alpha"
++
++    def test_no_doc_marker_returns_none(self) -> None:
++        annotation = Annotated[int, 42]
++        assert _extract_doc_description(annotation) is None
++
++    def test_plain_type_returns_none(self) -> None:
++        assert _extract_doc_description(int) is None
++
++    def test_typing_extensions_doc_recognised(self) -> None:
++        annotation = Annotated[str, Doc("backport doc")]
++        assert _extract_doc_description(annotation) == "backport doc"
++
++
+ # ---------------------------------------------------------------------------
+ # Existing tests (unchanged) follow ...
+ # ---------------------------------------------------------------------------
