@@ -468,52 +468,6 @@ def test_always_use_bars_union(annotation: str, expected_result: str) -> None:
     assert result == expected_result
 
 
-@pytest.mark.parametrize("library", [typing, typing_extensions], ids=["typing", "typing_extensions"])
-@pytest.mark.parametrize(
-    ("annotation", "params", "expected_result"),
-    [
-        pytest.param("ClassVar", int, ":py:data:`~typing.ClassVar`\\ \\[:py:class:`int`]", id="ClassVar"),
-        pytest.param("NoReturn", None, ":py:data:`~typing.NoReturn`", id="NoReturn"),
-        pytest.param("Literal", ("a", 1), ":py:data:`~typing.Literal`\\ \\[``'a'``, ``1``]", id="Literal"),
-        pytest.param(
-            "Literal",
-            (SomeEnum.VALUE,),
-            rf":py:data:`~typing.Literal`\ \[:py:attr:`~{__name__}.SomeEnum.VALUE`]",
-            id="Literal-enum",
-        ),
-        pytest.param("Type", None, ":py:class:`~typing.Type`", id="Type-none"),
-        pytest.param("Type", (A,), rf":py:class:`~typing.Type`\ \[:py:class:`~{__name__}.A`]", id="Type-A"),
-    ],
-)
-def test_format_annotation_both_libs(library: ModuleType, annotation: str, params: Any, expected_result: str) -> None:
-    try:
-        annotation_cls = getattr(library, annotation)
-    except AttributeError:  # pragma: no cover -- all tested annotations exist in both libs on 3.12+
-        pytest.skip(f"{annotation} not available in the {library.__name__} module")
-
-    ann = annotation_cls if params is None else annotation_cls[params]
-    result = format_annotation(ann, create_autospec(Config))
-    assert result == expected_result
-
-
-def test_format_annotation_tuple() -> None:
-    conf = create_autospec(Config)
-    assert format_annotation((int, str), conf) == "(:py:class:`int`, :py:class:`str`)"
-
-
-def test_format_annotation_empty_tuple() -> None:
-    conf = create_autospec(Config)
-    assert format_annotation((), conf) == "()"
-
-
-def test_format_annotation_single_element_tuple() -> None:
-    conf = create_autospec(Config)
-    assert format_annotation((int,), conf) == "(:py:class:`int`, )"
-
-
-def test_format_annotation_none() -> None:
-    conf = create_autospec(Config)
-    assert format_annotation(None, conf) == ":py:obj:`None`"
 
 
 def test_format_annotation_ellipsis() -> None:

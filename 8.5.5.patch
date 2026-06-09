@@ -1,0 +1,324 @@
+diff --git a/tests/test_type_resolution.py b/tests/test_type_resolution.py
+new file 100644
+--- /dev/null
++++ b/tests/test_type_resolution.py
+@@ -0,0 +1,109 @@
++from __future__ import annotations
++
++import sys
++import types
++from pathlib import Path
++from textwrap import dedent
++from typing import TYPE_CHECKING, Union
++
++import pytest
++
++from sphinx_autodoc_typehints._resolver._type_hints import (
++    _resolve_type_guarded_imports,
++    _should_skip_guarded_import_resolution,
++    get_all_type_hints,
++)
++
++if TYPE_CHECKING:
++    from io import StringIO
++
++    from sphinx.testing.util import SphinxTestApp
++
++
++class TestTypeCheckingBlockResolution:
++    """Test that functions can resolve types from TYPE_CHECKING blocks."""
++
++    def test_resolve_type_from_typing_checking_block(self, monkeypatch: pytest.MonkeyPatch) -> None:
++        """Scenario: a module imports a type inside `if TYPE_CHECKING:` and uses it in a function annotation.
++        Expected: get_all_type_hints resolves the guarded import and returns the real type."""
++        source = dedent("""\
++        from __future__ import annotations
++        from typing import TYPE_CHECKING
++
++        if TYPE_CHECKING:
++            from decimal import Decimal
++
++        def func(x: Decimal) -> Decimal:
++            '''Do something.
++
++            :param x: a decimal
++            '''
++            return x
++        """)
++        guarded_mod = types.ModuleType("guarded_mod")
++        guarded_mod.__file__ = "/fake/guarded_mod.py"
++        exec(compile(source, "/fake/guarded_mod.py", "exec"), guarded_mod.__dict__)  # noqa: S102
++        monkeypatch.setitem(sys.modules, "guarded_mod", guarded_mod)
++
++        result = get_all_type_hints([], guarded_mod.func, "guarded_mod.func", {})
++        from decimal import Decimal
++        assert result.get("x") is Decimal
++        assert result.get("return") is Decimal
++
++    def test_resolve_missing_guarded_import_no_crash(self, monkeypatch: pytest.MonkeyPatch) -> None:
++        """Scenario: a TYPE_CHECKING block imports a name that does not exist at runtime.
++        Expected: resolution does not crash; the type hint remains a string or is gracefully handled."""
++        source = dedent("""\
++        from __future__ import annotations
++        from typing import TYPE_CHECKING
++
++        if TYPE_CHECKING:
++            from nonexistent_module import MissingType
++
++        def func(x: MissingType) -> int:
++            '''Do something.
++
++            :param x: something
++            '''
++            return 1
++        """)
++        guarded_mod = types.ModuleType("guarded_mod_missing")
++        guarded_mod.__file__ = "/fake/guarded_mod_missing.py"
++        exec(compile(source, "/fake/guarded_mod_missing.py", "exec"), guarded_mod.__dict__)  # noqa: S102
++        monkeypatch.setitem(sys.modules, "guarded_mod_missing", guarded_mod)
++
++        result = get_all_type_hints([], guarded_mod.func, "guarded_mod_missing.func", {})
++        assert isinstance(result, dict)
++
++    def test_resolve_typing_checking_with_qualified_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
++        """Scenario: a TYPE_CHECKING block uses `if typing.TYPE_CHECKING:` (qualified form).
++        Expected: the guarded import is still resolved correctly."""
++        source = dedent("""\
++        from __future__ import annotations
++        import typing
++
++        if typing.TYPE_CHECKING:
++            from collections.abc import Sequence
++
++        def func(x: Sequence[int]) -> int:
++            '''Do something.
++
++            :param x: a sequence
++            '''
++            return len(x)
++        """)
++        guarded_mod = types.ModuleType("guarded_mod_qualified")
++        guarded_mod.__file__ = "/fake/guarded_mod_qualified.py"
++        exec(compile(source, "/fake/guarded_mod_qualified.py", "exec"), guarded_mod.__dict__)  # noqa: S102
++        monkeypatch.setitem(sys.modules, "guarded_mod_qualified", guarded_mod)
++
++        result = get_all_type_hints([], guarded_mod.func, "guarded_mod_qualified.func", {})
++        from collections.abc import Sequence
++        assert result.get("x") is not None
++        assert "Sequence" in str(result.get("x"))
++
++    def test_should_skip_guarded_for_builtin_module(self) -> None:
++        """Scenario: object's __module__ is in sys.builtin_module_names.
++        Expected: _should_skip_guarded_import_resolution returns True, no resolution attempted."""
++        fn: object = type("FakeFunc", (), {"__globals__": {}, "__module__": "builtins"})()
++        assert _should_skip_guarded_import_resolution(fn) is True
++
++    def test_should_not_skip_guarded_for_regular_module(self) -> None:
++        """Scenario: object's __module__ is a normal user module.
++        Expected: _should_skip_guarded_import_resolution returns False, resolution proceeds."""
++        import csv
++        assert _should_skip_guarded_import_resolution(csv) is False
+diff --git a/tests/test_config_options.py b/tests/test_config_options.py
+new file 100644
+--- /dev/null
++++ b/tests/test_config_options.py
+@@ -0,0 +1,39 @@
++from __future__ import annotations
++
++from typing import Union
++from unittest.mock import create_autospec
++
++from sphinx.config import Config
++
++from sphinx_autodoc_typehints import format_annotation
++
++
++class TestAlwaysUseBarsUnion:
++    """Test always_use_bars_union configuration option."""
++
++    def test_always_use_bars_union_false_shows_union(self) -> None:
++        """When always_use_bars_union=False, Union[X, Y] is rendered as
++        :py:data:`~typing.Union`\\ [:py:class:`X`, :py:class:`Y`]."""
++        conf = create_autospec(Config, _annotation_globals=globals(), always_use_bars_union=False)
++        result = format_annotation(Union[int, str], conf)
++        assert ":py:data:`~typing.Union`" in result
++        assert "int" in result
++        assert "str" in result
++        assert "|" not in result
++
++    def test_always_use_bars_union_true_shows_bars(self) -> None:
++        """When always_use_bars_union=True, Union[X, Y] is rendered as
++        :py:class:`int` | :py:class:`str`."""
++        conf = create_autospec(Config, _annotation_globals=globals(), always_use_bars_union=True)
++        result = format_annotation(Union[int, str], conf)
++        assert "|" in result
++        assert ":py:class:`int`" in result
++        assert ":py:class:`str`" in result
++        assert "Union" not in result
++
++    def test_bars_union_with_none(self) -> None:
++        """When always_use_bars_union=True, Union[int, None] renders as
++        :py:class:`int` | :py:obj:`None`."""
++        conf = create_autospec(Config, _annotation_globals=globals(), always_use_bars_union=True)
++        result = format_annotation(Union[int, None], conf)
++        assert ":py:class:`int`" in result
++        assert ":py:obj:`None`" in result
++        assert "|" in result
+diff --git a/tests/test_warnings.py b/tests/test_warnings.py
+new file 100644
+--- /dev/null
++++ b/tests/test_warnings.py
+@@ -0,0 +1,57 @@
++from __future__ import annotations
++
++from pathlib import Path
++from textwrap import dedent
++from typing import TYPE_CHECKING
++from unittest.mock import MagicMock, patch
++
++import pytest
++
++from conftest import make_sig_app
++from sphinx_autodoc_typehints import process_signature
++from sphinx_autodoc_typehints._resolver._util import get_obj_location
++
++if TYPE_CHECKING:
++    from io import StringIO
++
++    from sphinx.testing.util import SphinxTestApp
++
++
++class TestLocalFunctionWarning:
++    """Test that referencing a local function triggers sphinx_autodoc_typehints.local_function warning."""
++
++    def test_local_function_triggers_warning(self) -> None:
++        """Scenario: a method with <locals> in its __qualname__ is processed.
++        Expected: a warning with type='sphinx_autodoc_typehints' and subtype='local_function' is emitted."""
++        def fake_method(self: object, x: int) -> str: ...
++
++        fake_method.__annotations__ = {"x": int, "return": str}
++        fake_method.__qualname__ = "outer.<locals>.inner"
++        fake_method.__module__ = __name__
++
++        app = make_sig_app()
++        mock_logger = MagicMock()
++        with patch("sphinx_autodoc_typehints._LOGGER", mock_logger):
++            process_signature(app, "method", "test.outer.<locals>.inner", fake_method, MagicMock(), "", "")
++        mock_logger.warning.assert_called_once()
++        kwargs = mock_logger.warning.call_args.kwargs
++        assert kwargs["type"] == "sphinx_autodoc_typehints"
++        assert kwargs["subtype"] == "local_function"
++        assert "Cannot handle as a local function" in kwargs[0] if kwargs[0] else "Cannot handle as a local function" in str(mock_logger.warning.call_args)
++
++    def test_local_function_warning_returns_none(self) -> None:
++        """Scenario: a local function is processed.
++        Expected: process_signature returns None, signaling that the signature cannot be handled."""
++        def fake_method(self: object, x: int) -> str: ...
++
++        fake_method.__annotations__ = {"x": int, "return": str}
++        fake_method.__qualname__ = "outer.<locals>.inner"
++        fake_method.__module__ = __name__
++
++        app = make_sig_app()
++        mock_logger = MagicMock()
++        with patch("sphinx_autodoc_typehints._LOGGER", mock_logger):
++            result = process_signature(app, "method", "test.outer.<locals>.inner", fake_method, MagicMock(), "", "")
++        assert result is None
++
++
++class TestSuppressLocalFunctionWarning:
++    """Test conf.py configuration to suppress local_function warnings."""
++    # To suppress sphinx_autodoc_typehints.local_function warnings in conf.py, add:
++    #   suppress_warnings = ["sphinx_autodoc_typehints.local_function"]
++    # This uses Sphinx's built-in suppress_warnings mechanism which filters warnings
++    # by their type and subtype fields.
++    pass
+diff --git a/tests/test_signature_preservation.py b/tests/test_signature_preservation.py
+new file 100644
+--- /dev/null
++++ b/tests/test_signature_preservation.py
+@@ -0,0 +1,67 @@
++from __future__ import annotations
++
++from pathlib import Path
++from textwrap import dedent
++from typing import TYPE_CHECKING
++
++import pytest
++
++from conftest import make_sig_app
++from sphinx_autodoc_typehints import process_signature
++
++if TYPE_CHECKING:
++    from io import StringIO
++
++    from sphinx.testing.util import SphinxTestApp
++
++
++class TestSignaturePreservation:
++    """Test typehints_use_signature=True and typehints_use_signature_return=False."""
++
++    def test_param_types_in_signature_return_not_in_signature(self) -> None:
++        """When typehints_use_signature=True and typehints_use_signature_return=False:
++        Verification point 1: parameter type annotations appear in the signature string.
++        Verification point 2: return type annotation does NOT appear in the signature string."""
++        def func(x: int, y: str) -> bool: ...
++
++        app = make_sig_app(typehints_use_signature=True, typehints_use_signature_return=False)
++        result = process_signature(app, "function", "test.func", func, None, "", "")
++        assert result is not None
++        sig_str, _ = result
++
++        # Verification point 1: parameter types appear in signature
++        assert "int" in sig_str
++        assert "str" in sig_str
++
++        # Verification point 2: return type does NOT appear in signature
++        assert "bool" not in sig_str
++        assert "->" not in sig_str
++
++    def test_both_signature_and_return_enabled(self) -> None:
++        """When typehints_use_signature=True and typehints_use_signature_return=True:
++        Both parameter types and return type appear in the signature string."""
++        def func(x: int, y: str) -> bool: ...
++
++        app = make_sig_app(typehints_use_signature=True, typehints_use_signature_return=True)
++        result = process_signature(app, "function", "test.func", func, None, "", "")
++        assert result is not None
++        sig_str, _ = result
++
++        assert "int" in sig_str
++        assert "str" in sig_str
++        assert "bool" in sig_str
++
++    def test_neither_signature_nor_return_enabled(self) -> None:
++        """When typehints_use_signature=False and typehints_use_signature_return=False:
++        Neither parameter types nor return type appear in the signature string."""
++        def func(x: int, y: str) -> bool: ...
++
++        app = make_sig_app(typehints_use_signature=False, typehints_use_signature_return=False)
++        result = process_signature(app, "function", "test.func", func, None, "", "")
++        assert result is not None
++        sig_str, _ = result
++
++        assert "int" not in sig_str
++        assert "str" not in sig_str
++        assert "bool" not in sig_str
++        assert "->" not in sig_str
+diff --git a/tests/roots/test-suppress-local-function/conf.py b/tests/roots/test-suppress-local-function/conf.py
+new file 100644
+--- /dev/null
++++ b/tests/roots/test-suppress-local-function/conf.py
+@@ -0,0 +1,12 @@
++from __future__ import annotations
++
++import pathlib
++import sys
++
++master_doc = "index"
++sys.path.insert(0, str(pathlib.Path(__file__).parent))
++extensions = [
++    "sphinx.ext.autodoc",
++    "sphinx_autodoc_typehints",
++]
++suppress_warnings = ["sphinx_autodoc_typehints.local_function"]

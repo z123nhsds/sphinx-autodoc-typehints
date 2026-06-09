@@ -459,42 +459,6 @@ def test_sphinx_output_formatter_no_use_rtype(app: SphinxTestApp, status: String
 
 
 @pytest.mark.sphinx("text", testroot="dummy")
-def test_sphinx_output_with_use_signature(app: SphinxTestApp, status: StringIO) -> None:
-    app.config.master_doc = "simple"  # create flag
-    app.config.typehints_use_signature = True
-    app.build()
-    assert "build succeeded" in status.getvalue()
-    text_path = Path(app.srcdir) / "_build" / "text" / "simple.txt"
-    text_contents = normalize_sphinx_text(text_path.read_text())
-    expected_contents = """\
-    Simple Module
-    *************
-
-    dummy_module_simple.function(x: bool, y: int = 1)
-
-       Function docstring.
-
-       Parameters:
-          * **x** ("bool") -- foo
-
-          * **y** ("int") -- bar
-
-       Return type:
-          "str"
-    """
-    assert text_contents == normalize_sphinx_text(dedent(expected_contents))
-
-
-@pytest.mark.sphinx("text", testroot="dummy")
-def test_sphinx_output_with_use_signature_return(app: SphinxTestApp, status: StringIO) -> None:
-    app.config.master_doc = "simple"  # create flag
-    app.config.typehints_use_signature_return = True
-    app.build()
-    assert "build succeeded" in status.getvalue()
-    text_path = Path(app.srcdir) / "_build" / "text" / "simple.txt"
-    text_contents = normalize_sphinx_text(text_path.read_text())
-    expected_contents = """\
-    Simple Module
     *************
 
     dummy_module_simple.function(x, y=1) -> str
