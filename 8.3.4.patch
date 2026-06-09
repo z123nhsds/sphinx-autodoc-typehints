@@ -1,0 +1,84 @@
+diff --git a/8.3.4.patch b/8.3.4.patch
+new file mode 100644
+index 0000000..8e8ac80
+--- /dev/null
++++ b/8.3.4.patch
+@@ -0,0 +1,74 @@
++diff --git a/conf.py b/conf.py
++--- a/conf.py
+++++ b/conf.py
++@@ -1,8 +1,38 @@
++-extensions = ["sphinx.ext.autodoc"]
++-autodoc_typehints = "description"
+++# ============================================================
+++# sphinx-autodoc-typehints 8.3.4配置重构
+++# ============================================================
+++
+++# 原配置:
+++#   extensions = ["sphinx.ext.autodoc"]
+++#   autodoc_typehints = "description"
+++# 新配置如下:
+++
+++extensions = [
+++    "sphinx.ext.autodoc",
+++    "sphinx.ext.napoleon",           # Google/NumPy 风格 docstring 支持
+++    "sphinx_autodoc_typehints",      # 接管类型提示处理
+++]
+++
+++# 关闭 Sphinx 内置类型提示，避免重复
+++autodoc_typehints = "none"
+++
+++# 使用 X | Y 联合类型语法（而非 Union[X, Y]）
+++always_use_bars_union = True
+++
+++# 不显示 None 返回类型
+++typehints_document_rtype_none = False
+++
+++# 默认值以 braces-after 方式显示: "param (int) -- description (default: 1)"
+++typehints_defaults = "braces-after"
+++
+++# 保留函数签名中的参数类型和返回类型
+++typehints_use_signature = True
+++typehints_use_signature_return = True
+++
+++# 修复 gi.repository.Gtk.Window 的 intersphinx 链接
+++def fixup_module_name(module: str) -> str:
+++    if module.startswith("gi.repository."):
+++        return module.removeprefix("gi.repository.")
+++    return module
+++
+++typehints_fixup_module_name = fixup_module_name
++
++
++# ============================================================
++# @overload 渲染区别说明
++# ============================================================
++#
++# Sphinx 内置 autodoc_typehints 与 sphinx-autodoc-typehints 对
++# @overload 的渲染方式存在本质区别：
++#
++# 1. Sphinx 内置 autodoc:
++#    - 在函数签名区域为每个 @overload 变体生成独立的签名行
++#    - 类型直接嵌入签名字符串，无法生成 intersphinx 交叉引用链接
++#    - 重载签名与 docstring 内容在视觉上分离，排版割裂感较强
++#    - 无按函数粒度禁用重载的机制
++#
++# 2. sphinx-autodoc-typehints:
++#    - 通过 monkey-patch ModuleAnalyzer.analyze 拦截 Sphinx 对
++#      overload 的检测，将重载信息缓存到 _OVERLOADS_CACHE 后清空
++#      Sphinx 内部的重载状态，阻止其在签名区域渲染
++#    - 改为在 docstring 内部注入 ":Overloads:" 段落，以格式化列表
++#      展示每个重载变体（参数名 + 类型 + 返回箭头）
++#    - 重载中的类型通过 format_annotation() 格式化，可生成正确的
++#      intersphinx 交叉引用链接（可点击跳转到对应类型的文档）
++#    - 支持通过 :no-overloads: 指令按函数粒度禁用重载渲染
++#    - 通过 typehints_document_overloads = False 可全局关闭
++#    - 重载信息与 docstring 内容融为一体，排版更统一
++#
++# 结论：sphinx-autodoc-typehints 将 overload 从"签名区域渲染"
++# 迁移到"docstring 内渲染"，获得了交叉引用链接能力和更灵活的
++# 控制粒度，代价是需要引入该扩展作为依赖。
+\ No newline at end of file
+diff --git a/8.3.4.patch b/8.3.4.patch
+new file mode 100644
+index 0000000..e69de29
