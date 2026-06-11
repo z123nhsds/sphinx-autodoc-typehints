@@ -1,61 +1,66 @@
-# conf.py — sphinx-autodoc-typehints 3.10.x 配置示例
-
-extensions = [
-    # 1) 构建配置：先加载 napoleon，再加载 sphinx_autodoc_typehints，
-    #    以便后者能够对 napoleon 已解析好的 docstring 注入类型信息。
-    "sphinx.ext.napoleon",
-    "sphinx.ext.intersphinx",
-    "sphinx_autodoc_typehints",
-]
-
-# 禁用 Sphinx 原生的 autodoc 类型提示处理，避免与
-# sphinx-autodoc-typehints 的签名/docstring 注入逻辑重复渲染。
-autodoc_typehints = "none"
-
-# 2) 跨引用修复：启用 intersphinx 并映射 Python 官方文档。
-#    sphinx-autodoc-typehints 在 env-before-read-docs 阶段调用
-#    build_type_mapping()，扫描 env.intersphinx_inventory，将每个
-#    文档项的 "py:class" / "py:function" / "py:exception" / "py:data"
-#    条目在运行时的 ``obj.__module__.obj.__qualname__`` 路径（内部路径）
-#    反向映射回官方文档中登记的 ``documented_name``（即 intersphinx
-#    显示名）。
-#
-#    对 threading.local 而言，其在 CPython 中的真实运行时位置是
-#    _thread._local，__module__/_local 的内部路径为 "_thread._local"，
-#    而 Python 官方文档里登记的公共名称却是 "threading.local"。
-#    没有该映射时，format_annotation() 会发出
-#    ``:py:class:`~_thread._local```——这个路径在 intersphinx 清单中
-#    不存在，因此生成的是坏链/断链。
-#
-#    启用 intersphinx 后，映射表会存入
-#    ``app.config._intersphinx_type_mapping``，_annotations.py 在
-#    拼接 full_name 前会查询：
-#
-#        internal_path = f"{module}.{class_name}"           # "_thread._local"
-#        if mapped := mapping.get(internal_path):            # "threading.local"
-#            module, _, class_name = mapped.rpartition(".")
-#
-#    于是最终输出变为 ``:py:class:`~threading.local```，与 Python 官方
-#    intersphinx inventory 中的条目精确匹配，链接自动修复。
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-}
-
-# 3) 警告抑制：按警告类型（type / subtype）过滤掉
-#    guarded_import 与 local_function 两类告警。
-suppress_warnings = [
-    "sphinx_autodoc_typehints.guarded_import",
-    "sphinx_autodoc_typehints.local_function",
-]
-
-# 4) 签名控制：保留参数类型，但不保留返回类型。
-#    - typehints_use_signature = True
-#      process_signature() 会把每个参数的 annotation 原样保留在
-#      函数签名中（参见 __init__.py:97-103）。
-#    - typehints_use_signature_return = False
-#      使 stringify_signature(show_return_annotation=False)，从而
-#      输出的签名行不包含 " -> ..." 返回类型部分。
-#    配合 autodoc_typehints = "none" 使用，避免 Sphinx 自身再在
-#    签名中叠加类型。
-typehints_use_signature = True
-typehints_use_signature_return = False
+diff --git a/8.7.1.patch b/8.7.1.patch
+index f0aedd4..e69de29 100644
+--- a/8.7.1.patch
++++ b/8.7.1.patch
+@@ -1,61 +0,0 @@
+-# conf.py — sphinx-autodoc-typehints 3.10.x 配置示例
+-
+-extensions = [
+-    # 1) 构建配置：先加载 napoleon，再加载 sphinx_autodoc_typehints，
+-    #    以便后者能够对 napoleon 已解析好的 docstring 注入类型信息。
+-    "sphinx.ext.napoleon",
+-    "sphinx.ext.intersphinx",
+-    "sphinx_autodoc_typehints",
+-]
+-
+-# 禁用 Sphinx 原生的 autodoc 类型提示处理，避免与
+-# sphinx-autodoc-typehints 的签名/docstring 注入逻辑重复渲染。
+-autodoc_typehints = "none"
+-
+-# 2) 跨引用修复：启用 intersphinx 并映射 Python 官方文档。
+-#    sphinx-autodoc-typehints 在 env-before-read-docs 阶段调用
+-#    build_type_mapping()，扫描 env.intersphinx_inventory，将每个
+-#    文档项的 "py:class" / "py:function" / "py:exception" / "py:data"
+-#    条目在运行时的 ``obj.__module__.obj.__qualname__`` 路径（内部路径）
+-#    反向映射回官方文档中登记的 ``documented_name``（即 intersphinx
+-#    显示名）。
+-#
+-#    对 threading.local 而言，其在 CPython 中的真实运行时位置是
+-#    _thread._local，__module__/_local 的内部路径为 "_thread._local"，
+-#    而 Python 官方文档里登记的公共名称却是 "threading.local"。
+-#    没有该映射时，format_annotation() 会发出
+-#    ``:py:class:`~_thread._local```——这个路径在 intersphinx 清单中
+-#    不存在，因此生成的是坏链/断链。
+-#
+-#    启用 intersphinx 后，映射表会存入
+-#    ``app.config._intersphinx_type_mapping``，_annotations.py 在
+-#    拼接 full_name 前会查询：
+-#
+-#        internal_path = f"{module}.{class_name}"           # "_thread._local"
+-#        if mapped := mapping.get(internal_path):            # "threading.local"
+-#            module, _, class_name = mapped.rpartition(".")
+-#
+-#    于是最终输出变为 ``:py:class:`~threading.local```，与 Python 官方
+-#    intersphinx inventory 中的条目精确匹配，链接自动修复。
+-intersphinx_mapping = {
+-    "python": ("https://docs.python.org/3", None),
+-}
+-
+-# 3) 警告抑制：按警告类型（type / subtype）过滤掉
+-#    guarded_import 与 local_function 两类告警。
+-suppress_warnings = [
+-    "sphinx_autodoc_typehints.guarded_import",
+-    "sphinx_autodoc_typehints.local_function",
+-]
+-
+-# 4) 签名控制：保留参数类型，但不保留返回类型。
+-#    - typehints_use_signature = True
+-#      process_signature() 会把每个参数的 annotation 原样保留在
+-#      函数签名中（参见 __init__.py:97-103）。
+-#    - typehints_use_signature_return = False
+-#      使 stringify_signature(show_return_annotation=False)，从而
+-#      输出的签名行不包含 " -> ..." 返回类型部分。
+-#    配合 autodoc_typehints = "none" 使用，避免 Sphinx 自身再在
+-#    签名中叠加类型。
+-typehints_use_signature = True
+-typehints_use_signature_return = False
