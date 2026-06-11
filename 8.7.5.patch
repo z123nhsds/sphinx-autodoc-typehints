@@ -1,29 +1,34 @@
---- /dev/null
-+++ b/conf.py
-@@ -0,0 +1,43 @@
-+project = "example"
-+
-+# ── 1. 构建配置：扩展加载顺序 + 禁用原生类型提示 ──────────────────────
-+extensions = [
-+    "sphinx.ext.autodoc",
-+    "sphinx.ext.napoleon",
-+    "sphinx.ext.intersphinx",
-+    "sphinx_autodoc_typehints",
-+]
-+
-+autodoc_typehints = "none"
-+
-+# ── 2. 警告抑制 ────────────────────────────────────────────────────────
-+suppress_warnings = [
-+    "sphinx_autodoc_typehints.guarded_import",
-+    "sphinx_autodoc_typehints.local_function",
-+]
-+
-+# ── 3. 跨引用修复：intersphinx 映射 ───────────────────────────────────
-+intersphinx_mapping = {
-+    "python": ("https://docs.python.org/3", None),
-+}
-+
-+# ── 4. 签名控制：保留参数类型，不保留返回类型 ──────────────────────────
-+typehints_use_signature = True
-+typehints_use_signature_return = False
+diff --git a/8.7.5.patch b/8.7.5.patch
+index 8c28be2..e69de29 100644
+--- a/8.7.5.patch
++++ b/8.7.5.patch
+@@ -1,29 +0,0 @@
+---- /dev/null
+-+++ b/conf.py
+-@@ -0,0 +1,43 @@
+-+project = "example"
+-+
+-+# ── 1. 构建配置：扩展加载顺序 + 禁用原生类型提示 ──────────────────────
+-+extensions = [
+-+    "sphinx.ext.autodoc",
+-+    "sphinx.ext.napoleon",
+-+    "sphinx.ext.intersphinx",
+-+    "sphinx_autodoc_typehints",
+-+]
+-+
+-+autodoc_typehints = "none"
+-+
+-+# ── 2. 警告抑制 ────────────────────────────────────────────────────────
+-+suppress_warnings = [
+-+    "sphinx_autodoc_typehints.guarded_import",
+-+    "sphinx_autodoc_typehints.local_function",
+-+]
+-+
+-+# ── 3. 跨引用修复：intersphinx 映射 ───────────────────────────────────
+-+intersphinx_mapping = {
+-+    "python": ("https://docs.python.org/3", None),
+-+}
+-+
+-+# ── 4. 签名控制：保留参数类型，不保留返回类型 ──────────────────────────
+-+typehints_use_signature = True
+-+typehints_use_signature_return = False
