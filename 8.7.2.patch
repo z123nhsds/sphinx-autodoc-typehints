@@ -1,20 +1,25 @@
-extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.intersphinx",
-    "sphinx_autodoc_typehints",
-]
-
-autodoc_typehints = "none"
-
-suppress_warnings = [
-    "sphinx_autodoc_typehints.guarded_import",
-    "sphinx_autodoc_typehints.local_function",
-]
-
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-}
-
-typehints_use_signature = True
-typehints_use_signature_return = False
+diff --git a/8.7.2.patch b/8.7.2.patch
+index 40e7e56..e69de29 100644
+--- a/8.7.2.patch
++++ b/8.7.2.patch
+@@ -1,20 +0,0 @@
+-extensions = [
+-    "sphinx.ext.autodoc",
+-    "sphinx.ext.napoleon",
+-    "sphinx.ext.intersphinx",
+-    "sphinx_autodoc_typehints",
+-]
+-
+-autodoc_typehints = "none"
+-
+-suppress_warnings = [
+-    "sphinx_autodoc_typehints.guarded_import",
+-    "sphinx_autodoc_typehints.local_function",
+-]
+-
+-intersphinx_mapping = {
+-    "python": ("https://docs.python.org/3", None),
+-}
+-
+-typehints_use_signature = True
+-typehints_use_signature_return = False
