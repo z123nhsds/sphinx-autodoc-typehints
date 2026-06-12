@@ -1,0 +1,108 @@
+diff --git a/conf.py b/conf.py
+--- a/conf.py
++++ b/conf.py
+@@ -1,10 +1,95 @@
++"""
++Sphinx 项目配置修复方案
++=======================
++
++解决的问题：
++  1. 返回类型重复出现（:rtype: 独立出现 + :return: 后重复出现）
++  2. threading.local 交叉引用断裂（生成 __thread__local 而非 threading.local）
++
++问题根因分析：
++  - 问题1：同时启用了 sphinx.ext.napoleon（Google 风格 docstring 解析器）
++    + sphinx_autodoc_typehints 扩展，且两者都在各自生成 :rtype: 条目。
++    napoleon 从 Google 风格的 Returns: 段生成一个 :rtype:，
++    sphinx_autodoc_typehints 又从函数类型注解中注入另一个 :rtype:，
++    导致返回类型出现两次。
++
++  - 问题2：threading.local 在运行时的 __module__ 是 _thread._local
++    （CPython 内部实现模块），而非 threading.local。
++    sphinx_autodoc_typehints 默认基于 __module__.__qualname__ 生成
++    交叉引用链接，因此生成了错误的 __thread__local。
++    该扩展内置了通过 intersphinx 逆向映射自动修复此问题的机制，
++    但前提是必须启用 sphinx.ext.intersphinx 并配置 intersphinx_mapping。
++"""
++
++# ============================================================================
++# 一、扩展加载顺序（关键！）
++# ============================================================================
++# napoleon 必须在 sphinx_autodoc_typehints 之前加载，
++# 这样才能确保 napoleon 先解析 Google 风格 docstring，
++# 然后再由 typehints 扩展注入类型信息。
++# intersphinx 需在 typehints 之前加载以提供类型交叉引用映射。
+ extensions = [
+     "sphinx.ext.autodoc",
++    "sphinx.ext.intersphinx",         # ← 新增：提供 stdlib 类型交叉引用修正
++    "sphinx.ext.napoleon",
+     "sphinx_autodoc_typehints",
+-    "sphinx.ext.napoleon",
+ ]
++
++# ============================================================================
++# 二、Sphinx 内置 autodoc 配置
++# ============================================================================
++# 关闭 Sphinx 内置的类型提示处理，完全交由 sphinx_autodoc_typehints 处理。
++# 这是解决类型重复的基础前提。
++autodoc_typehints = "none"
++
++# ============================================================================
++# 三、Napoleon 扩展配置
++# ============================================================================
++# 禁止 napoleon 从 Google 风格 docstring 的 Returns: 段生成独立的 :rtype:。
++# 如果不关闭，napoleon 会先生成一个 :rtype:，
++# 然后 typehints 扩展又注入另一个，导致返回类型重复出现两次。
++napoleon_use_rtype = False
++
++# ============================================================================
++# 四、sphinx_autodoc_typehints 扩展配置
++# ============================================================================
++# 仍然在文档中展示返回类型（与 napoleon_use_rtype=False 配合，
++# 确保只有 typehints 扩展控制返回类型的生成）。
++typehints_document_rtype = True
++
++# 将返回类型内联到 :return: 描述中，而非生成独立的 :rtype: 块。
++# 当使用 Google 风格 docstring 时，推荐设为 False，
++# 以避免返回类型以独立段落的形式重复出现。
++# 设为 False 后，返回类型会跟在 Returns: 字段的描述后面，
++# 形成 "Returns: 描述文字 -- 返回类型" 的内联格式。
++typehints_use_rtype = False
++
++# ============================================================================
++# 五、intersphinx 配置（解决 threading.local 等 stdlib 类型交叉引用断裂）
++# ============================================================================
++# sphinx_autodoc_typehints 在检测到 intersphinx 启用后，会自动构建
++# 一个从 "运行时 __module__.__qualname__" 到 "文档化路径" 的逆向映射。
++#
++# 例如：
++#   - threading.local 的运行时路径是 _thread._local
++#   - Python 官方文档中的路径是 threading.local
++#   - 逆向映射自动将 _thread._local 修正为 threading.local
++#
++# 此机制还修正以下常见 stdlib 类型：
++#   - collections.OrderedDict   → 运行时 __module__ 为 _collections_abc
++#   - datetime.datetime         → 运行时 __module__ 为 datetime
++#   - concurrent.futures.Executor → 运行时 __module__ 为 concurrent.futures._base
++#   - pathlib.Path              → 自动修正
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
++
++# ============================================================================
++# 六、常见补充配置（按需启用）
++# ============================================================================
++# 以下配置为可选项，根据项目需要决定是否启用：
++
++# 如果希望参数也使用类型提示而无需在 docstring 中重复 :param type name: 格式，
++# 可启用此选项。启用后，即使 docstring 中写的是 ":param name: ..."，
++# 类型也会从注解中自动提取并追加。
++# always_document_param_types = False
++
++# 控制联合类型显示风格，True 使用 X | Y 风格，False 使用 Union[X, Y]。
++# Python 3.14+ 将始终使用管道语法。
++# always_use_bars_union = False
++
++# 如果希望在函数签名中保留类型提示（而非移到参数列表中）：
++# typehints_use_signature = False
++# typehints_use_signature_return = False
