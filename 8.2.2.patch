@@ -1,0 +1,16 @@
+--- a/conf.py
++++ b/conf.py
+@@
+ extensions = [
+     "sphinx.ext.autodoc",
+     "sphinx.ext.napoleon",
++    "sphinx.ext.intersphinx",
+     "sphinx_autodoc_typehints",
+ ]
+@@
+ autodoc_typehints = "none"
++napoleon_use_rtype = False
++typehints_use_rtype = False
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
