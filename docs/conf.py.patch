@@ -1,0 +1,47 @@
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -20,6 +20,13 @@ extensions = [
+     "sphinx_autodoc_typehints",
+ ]
+
++# ---- sphinx_autodoc_typehints: fix return-type duplication and broken cross-refs ----
++
++# 1) The extension injects its own ``:rtype:`` line into every docstring.  Combined
++#    with ``sphinx.ext.napoleon`` (which already emits an ``:rtype:`` field for every
++#    Google-style "Returns:" section) this produces the return type twice in the
++#    rendered output.  Setting ``typehints_document_rtype = False`` tells the
++#    extension to skip ``:rtype:`` injection entirely and leave the docstring alone.
++typehints_document_rtype = False
++
++# 2) Many stdlib classes report their ``__module__.__qualname__`` as an internal
++#    private path rather than the documented public one.  For example
++#    ``threading.local`` has ``__module__='_thread'`` and ``__qualname__='_local'``,
++#    which the extension would otherwise render as a ``_thread._local`` cross-ref
++#    (the broken ``__thread__local`` link the user observed).
++#
++#    The extension ships an *automatic* fix for this: when ``sphinx.ext.intersphinx``
++#    is loaded and the Python docs are in ``intersphinx_mapping``, it builds a
++#    reverse mapping from the internal runtime path to the documented one
++#    (see ``src/sphinx_autodoc_typehints/_intersphinx.py`` and
++#    ``tests/test_intersphinx_mapping.py::test_build_type_mapping_threading_local``).
++#    The only required user action is to enable intersphinx with the Python docs
++#    inventory – the extension picks it up on ``env-before-read-docs``.
++#
++#    Keep ``intersphinx`` listed in ``extensions`` above – e.g.::
++#
++#        extensions = [
++#            ...,
++#            "sphinx.ext.intersphinx",   # <-- must be present
++#            "sphinx.ext.autodoc",
++#            "sphinx.ext.napoleon",
++#            "sphinx_autodoc_typehints",
++#        ]
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
++
+ # ---- autodoc / napoleon ---------------------------------------------------
+
+ autodoc_typehints = "none"   # already in the user's conf – leave unchanged;
+                              # this is *Sphinx*'s built-in signature-type-hint
+                              # knob and has no effect on sphinx_autodoc_typehints
