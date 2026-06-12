@@ -1,0 +1,18 @@
+--- a/conf.py
++++ b/conf.py
+@@ -10,0 +10,14 @@
++# -----------------------------------------------------------------------------
++# sphinx_autodoc_typehints 配置
++# -----------------------------------------------------------------------------
++
++# 解决返回类型重复出现两次的问题（一处独立 :rtype:，一处跟在 :return: 后）。
++# 当与 napoleon 共同使用时，设置此项为 False 可禁用独立的 :rtype: 块生成。
++typehints_use_rtype = False
++
++# 解决 threading.local 等类型提示生成错误链接（如 __thread__local）的问题。
++# 通过提供一个自定义格式化函数，将 threading.local 显式映射为正确的跨引用格式。
++import threading
++def typehints_formatter(annotation, config):
++    if annotation is threading.local:
++        return ":class:`~threading.local`"
++    return None
