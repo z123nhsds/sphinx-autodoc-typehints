@@ -1,34 +1,46 @@
-+diff --git a/conf.py b/conf.py
-+--- a/conf.py
-++++ b/conf.py
-+@@ -1,6 +1,18 @@
-+ # Configuration file for the Sphinx documentation builder.
-+ 
-+ extensions = [
-+     "sphinx.ext.autodoc",
-+     "sphinx.ext.napoleon",
-++    "sphinx.ext.intersphinx",
-+     "sphinx_autodoc_typehints",
-+ ]
-+ 
-++napoleon_use_rtype = False
-++
-++typehints_use_rtype = False
-++
-++intersphinx_mapping = {
-++    "python": ("https://docs.python.org/3", None),
-++}
-diff --git a/8.2.5.patch b/8.2.5.patch
-index 28a11ba..e69de29 100644
---- a/8.2.5.patch
-+++ b/8.2.5.patch
-@@ -1,9 +0,0 @@
--diff --git a/8.2.5.patch b/8.2.5.patch
--new file mode 100644
--index 0000000..5c8f68f
----- /dev/null
--+++ b/8.2.5.patch
--@@ -0,0 +1,3 @@
--+diff --git a/8.3.1.patch b/8.3.1.patch
--+deleted file mode 100644
--+index e69de29..0000000
+diff --git a/conf.py b/conf.py
+--- a/conf.py
++++ b/conf.py
+@@ -1,6 +1,28 @@
+ # Configuration file for the Sphinx documentation builder.
+ 
+ extensions = [
+     "sphinx.ext.autodoc",
+     "sphinx.ext.napoleon",
++    # Add intersphinx to enable automatic cross-reference fixup for stdlib types
++    # whose runtime __module__ differs from their documented location.
++    # Example: threading.local reports __module__="_thread._local" but is
++    # documented as "threading.local". With intersphinx enabled, the extension
++    # builds a reverse mapping from runtime paths to documented paths and
++    # applies it during annotation formatting.
++    "sphinx.ext.intersphinx",
+     "sphinx_autodoc_typehints",
+ ]
+ 
++# Napoleon configuration: prevent duplicate :rtype: entries.
++# When using Google-style docstrings with sphinx_autodoc_typehints, napoleon
++# may emit its own :rtype: directive while typehints also injects return type
++# information. Setting this to False delegates return type rendering entirely
++# to sphinx_autodoc_typehints, which respects typehints_use_rtype.
++napoleon_use_rtype = False
++
++# Typehints configuration: inline return type with :return: description
++# instead of creating a separate :rtype: block. This prevents duplicate
++# return type entries when autodoc_typehints = "none" is set (which disables
++# type hints in signatures but not in docstring processing).
++# With use_rtype=False, the return type appears as:
++#   :return: description -- return_type
++# instead of:
++#   :return: description
++#   :rtype: return_type
++typehints_use_rtype = False
++
++# Intersphinx mapping: required for automatic cross-reference fixup.
++# The extension automatically builds a reverse mapping from internal runtime
++# paths (e.g., _thread._local) to documented paths (e.g., threading.local)
++# using the intersphinx inventory. No additional configuration is needed
++# beyond enabling intersphinx and pointing it at the Python docs.
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
+
