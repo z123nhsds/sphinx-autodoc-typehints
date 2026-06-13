@@ -1,3 +1,4 @@
+diff --git a/conf.py b/conf.py
 --- a/conf.py
 +++ b/conf.py
 @@
@@ -23,5 +24,4 @@
 +typehints_defaults = "braces-after"
 +typehints_use_signature = True
 +typehints_use_signature_return = True
-+typehints_document_overloads = True
 +typehints_fixup_module_name = fixup_module_name
