@@ -1,9 +1,8 @@
 --- conf.py
 +++ conf.py
-@@ -1,0 +1,24 @@
+@@ -0,0 +1,21 @@
 +import warnings
 +
-+# 扩展列表顺序：napoleon 必须先于 typehints，并启用 intersphinx
 +extensions = [
 +    "sphinx.ext.intersphinx",
 +    "sphinx.ext.napoleon",
@@ -17,11 +16,11 @@
 +typehints_use_signature = True
 +typehints_use_signature_return = False
 +
-+# 抑制特定警告
++# 抑制两类警告：guarded_import 与 local_function
 +warnings.filterwarnings("ignore", message=".*guarded_import.*")
 +warnings.filterwarnings("ignore", message=".*local_function.*")
 +
-+# 跨引用修复
++# 跨引用修复：启用 intersphinx 后自动修复 threading.local 链接
 +intersphinx_mapping = {
 +    "python": ("https://docs.python.org/3", None),
 +}
