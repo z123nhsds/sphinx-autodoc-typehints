@@ -1,30 +1,52 @@
-diff --git a/8.3.3.patch b/8.3.3.patch
-new file mode 100644
-index 0000000..e69de29
-diff --git a/patch b/patch
-new file mode 100644
-index 0000000..a2ccb14
---- /dev/null
-+++ b/patch
-@@ -0,0 +1,26 @@
+---- /dev/null
+-+++ b/patch
+-@@ -0,0 +1,26 @@
+-+extensions = [
+-+    "sphinx.ext.autodoc",
+-+    "sphinx.ext.napoleon",  # 必须在 sphinx_autodoc_typehints 之前加载，支持 Google 风格
+-+    "sphinx_autodoc_typehints",
+-+]
+-+
+-+# 使用 X | Y 联合类型语法，而非 Union[X, Y]
+-+always_use_bars_union = True
+-+
+-+# 不在文档中显示返回类型为 None 的情况
+-+typehints_document_rtype_none = False
+-+
+-+# 默认值以 braces-after 方式显示，例如 (default: 1) 附加在说明末尾
+-+typehints_defaults = "braces-after"
+-+
+-+# 保留函数签名中的参数类型和返回类型
+-+typehints_use_signature = True
+-+typehints_use_signature_return = True
+-+
+-+# 修复 gi.repository.Gtk.Window 的 intersphinx 链接
+-+def fixup_module_name(module: str) -> str:
+-+    if module.startswith("gi.repository."):
+-+        return module.removeprefix("gi.repository.")
+-+    return module
+-+
+-+typehints_fixup_module_name = fixup_module_name
+--- a/conf.py
++++ b/conf.py
+@@ -1,2 +1,22 @@
+-extensions = ["sphinx.ext.autodoc"]
+-autodoc_typehints = "description"
 +extensions = [
 +    "sphinx.ext.autodoc",
-+    "sphinx.ext.napoleon",  # 必须在 sphinx_autodoc_typehints 之前加载，支持 Google 风格
++    "sphinx.ext.napoleon",
 +    "sphinx_autodoc_typehints",
 +]
 +
-+# 使用 X | Y 联合类型语法，而非 Union[X, Y]
-+always_use_bars_union = True
++# 禁用 Sphinx 内置处理以避免与扩展产生的类型提示重复
++autodoc_typehints = "none"
 +
-+# 不在文档中显示返回类型为 None 的情况
-+typehints_document_rtype_none = False
-+
-+# 默认值以 braces-after 方式显示，例如 (default: 1) 附加在说明末尾
-+typehints_defaults = "braces-after"
-+
-+# 保留函数签名中的参数类型和返回类型
-+typehints_use_signature = True
-+typehints_use_signature_return = True
++# sphinx-autodoc-typehints 配置
++always_use_bars_union = True            # 使用 X | Y 联合类型
++typehints_document_rtype_none = False   # 不显示 None 返回类型
++typehints_defaults = "braces-after"     # 默认值以 braces-after 方式显示
++typehints_use_signature = True          # 保留函数签名中的参数类型
++typehints_use_signature_return = True   # 保留函数签名中的返回类型
 +
 +# 修复 gi.repository.Gtk.Window 的 intersphinx 链接
 +def fixup_module_name(module: str) -> str:
