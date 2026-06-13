@@ -1,0 +1,41 @@
+diff --git a/conf.py b/conf.py
+--- a/conf.py
++++ b/conf.py
+@@ -1,0 +1,35 @@
++
++# ==============================================================================
++# sphinx-autodoc-typehints 扩展专项配置修改
++# ==============================================================================
++# 此部分配置专门用于解决 Sphinx 文档生成中类型提示的相关渲染问题，
++# 前提是已启用 sphinx.ext.autodoc、sphinx.ext.napoleon 和 sphinx_autodoc_typehints，
++# 并使用 Google 风格 docstring，且已设置 autodoc_typehints = "none"。
++
++# ------------------------------------------------------------------------------
++# 问题 1：返回类型出现两次（独立 :rtype: + :return: 后重复）
++# ------------------------------------------------------------------------------
++# 现象原因：
++# napoleon 扩展在处理 Google 风格的 `Returns:` 时，会将其转换为 `:return:` 字段。
++# 而 sphinx_autodoc_typehints 默认配置下（typehints_use_rtype = True），会尝试
++# 独立生成一个 `:rtype:` 字段来放置返回类型，导致最终文档中返回类型重复出现。
++#
++# 解决方案：
++# 设置 typehints_use_rtype = False。这样扩展会将返回的类型提示直接内联追加到
++# 已存在的 `:return:` 描述中，从而消除独立的 `:rtype:` 并解决重复问题。
++typehints_use_rtype = False
++
++# ------------------------------------------------------------------------------
++# 问题 2：threading.local 类型提示生成错误链接 __thread__local
++# ------------------------------------------------------------------------------
++# 现象原因：
++# threading.local 在 CPython 中的底层实现为 C 扩展类型 _thread._local。
++# 扩展在反射该类型时，提取到的模块名为 _thread，类名为 _local（或 __thread__local），
++# 导致 Sphinx 交叉引用链接生成失败。
++#
++# 解决方案：
++# 利用 sphinx-autodoc-typehints 提供的 typehints_formatter 钩子函数，
++# 对 threading.local 的注解对象进行拦截，强制返回正确的 Sphinx 角色字符串。
++import threading
++def typehints_formatter(annotation, config=None):
++    if annotation is threading.local:
++        return ':py:class:`~threading.local`'
++    return None
