@@ -1,41 +1,24 @@
-diff --git a/8.7.4.patch b/8.7.4.patch
-index d76bfc7..e69de29 100644
---- a/8.7.4.patch
-+++ b/8.7.4.patch
-@@ -1,36 +0,0 @@
--# 1. 禁用 Sphinx 原生类型提示处理，并设置扩展加载顺序（napoleon 先于 typehints）
--autodoc_typehints = "none"
--extensions = [
--    "sphinx.ext.autodoc",
--    "sphinx.ext.napoleon",
--    "sphinx_autodoc_typehints",
--]
--
--# 2. 抑制 sphinx_autodoc_typehints.guarded_import 和 sphinx_autodoc_typehints.local_function 两类警告
--suppress_warnings = [
--    "sphinx_autodoc_typehints.guarded_import",
--    "sphinx_autodoc_typehints.local_function",
--]
--
--# 3. 启用 intersphinx 并映射 Python 官方文档，该扩展自动修复 threading.local 的链接问题
--extensions = [
--    "sphinx.ext.autodoc",
--    "sphinx.ext.intersphinx",
--    "sphinx.ext.napoleon",
--    "sphinx_autodoc_typehints",
--]
--intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
--
--# 跨引用修复原因解释：
--# `threading.local` 在运行时的实际类定义位于 `_thread._local` 模块，但 Python 官方文档
--# 将其公开文档路径记录为 `threading.local`。当 intersphinx 加载 Python 官方文档清单后，
--# sphinx-autodoc-typehints 会自动构建一个从运行时内部路径到文档公开路径的反向映射。
--# 它遍历 intersphinx 清单中的所有已记录类型，尝试导入对应模块并获取其实际运行时的
--# `__module__.__qualname__`，如果发现运行时路径与文档路径不一致，就会记录这个映射关系。
--# 在格式化类型注解生成交叉引用时，会应用这个映射，将 `_thread._local` 自动修正为正确的
--# `threading.local`，从而指向 Python 官方文档中正确的位置，解决链接断裂问题。
--# 该过程自动完成，无需额外配置。
--
--# 4. 函数签名保留参数类型但不保留返回类型
--typehints_use_signature = True       # 保留参数类型
--typehints_use_signature_return = False  # 不保留返回类型
+--- a/conf.py
++++ b/conf.py
+@@ -14,0 +15,28 @@
++
++extensions = [
++    "sphinx.ext.napoleon",
++    "sphinx_autodoc_typehints",
++]
++
++autodoc_typehints = "none"
++
++import warnings
++warnings.filterwarnings("ignore", message=".*guarded_import.*")
++warnings.filterwarnings("ignore", message=".*local_function.*")
++
++intersphinx_mapping = {
++    "python": ("https://docs.python.org/3", None),
++}
++
++# typehints将threading.local等类型映射为标准库文档路径，
++# 启用intersphinx后自动修复交叉引用链接
++
++typehints_use_signature = True
++typehints_use_signature_return = False
